@@ -6,6 +6,28 @@ servers:
   - url: http://localhost:8000
 paths:
   /users:
+    get:
+      operationId: listUsersByRole
+      summary: List users filtered by role
+      parameters:
+        - name: role
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [member, admin]
+          example: member
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        '200':
+          description: Matching users
     post:
       operationId: createUser
       summary: Create a user

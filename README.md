@@ -10,7 +10,19 @@ deterministic Python renderer.
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
+
+## Start the demo API
+
+In a separate terminal, start the included FastAPI service. It exposes the
+same API as `sample_openapi.yaml`, including `GET /users?role=member&limit=10`.
+
+```powershell
+uvicorn demo_api:app --reload --port 8000
+```
+
+Visit `http://localhost:8000/docs` to inspect the live Swagger UI.
 
 ## Generate tests
 
@@ -38,4 +50,6 @@ pytest generated_tests/test_api.py
 The output file is runnable Python and uses `httpx`. It currently supports
 local `$ref` values, JSON request bodies, required path/query parameters, and
 conservative positive/required-field-negative tests. The LLM is optional; it
-returns structured plans rather than executable code.
+returns structured plans rather than executable code. Every run logs each
+operation and its plan, and saves the complete plan alongside generated code,
+for example `generated_tests/test_api.plan.json`.

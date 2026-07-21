@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
@@ -18,7 +19,10 @@ from typing import Any
 
 import yaml
 
+from config import API_BASE_URL, GROQ_API_KEY, GROQ_MODEL
+
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options"}
+LOGGER = logging.getLogger("swagger_to_test")
 
 
 @dataclass
@@ -31,6 +35,14 @@ class TestCase:
     query: dict[str, Any] = field(default_factory=dict)
     headers: dict[str, str] = field(default_factory=dict)
     payload: Any | None = None
+
+
+def test_to_dict(test: TestCase) -> dict[str, Any]:
+    return {
+        "name": test.name, "kind": test.kind, "method": test.method,
+        "path": test.path, "query": test.query, "headers": test.headers,
+        "payload": test.payload, "expected_status": test.expected_status,
+    }
 
 
 def load_spec(path: Path) -> dict[str, Any]:
@@ -149,6 +161,7 @@ def groq_plan(operation: dict[str, Any], api_key: str, model: str) -> list[TestC
     except urllib.error.HTTPError as error:
         raise RuntimeError(f"Groq API returned HTTP {error.code}: {error.read().decode()}") from error
     data = json.loads(output)
+    LOGGER.info("LLM test plan for %s:\n%s", operation["operation_id"], json.dumps(data, indent=2))
     return [TestCase(**item) for item in data["tests"]]
 
 
@@ -163,26 +176,35 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Generate pytest contract tests from OpenAPI.")
     parser.add_argument("--spec", required=True, type=Path)
     parser.add_argument("--out", type=Path, default=Path("generated_tests/test_generated_api.py"))
+    parser.add_argument("--plan-out", type=Path, default=None, help="Where to write the JSON test plan.")
     parser.add_argument("--base-url", default=None)
     parser.add_argument("--llm", action="store_true", help="Use Groq to make the test plan; requires GROQ_API_KEY.")
-    parser.add_argument("--model", default="openai/gpt-oss-120b")
+    parser.add_argument("--model", default=GROQ_MODEL)
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = parser.parse_args()
+    logging.basicConfig(level=getattr(logging, args.log_level), format="%(levelname)s %(message)s")
     spec = load_spec(args.spec)
-    base_url = args.base_url or spec.get("servers", [{}])[0].get("url", "http://localhost:8000")
+    base_url = args.base_url or os.getenv("API_BASE_URL") or spec.get("servers", [{}])[0].get("url", API_BASE_URL)
     all_tests: list[TestCase] = []
-    key = os.getenv("GROQ_API_KEY")
+    key = GROQ_API_KEY
     for operation in normalized_operations(spec):
+        LOGGER.info("Processing %s %s (%s)", operation["method"], operation["path"], operation["operation_id"])
         if args.llm:
             if not key:
                 raise SystemExit("--llm requires the GROQ_API_KEY environment variable.")
             all_tests.extend(groq_plan(operation, key, args.model))
         else:
-            all_tests.extend(offline_plan(spec, operation))
+            planned = offline_plan(spec, operation)
+            LOGGER.info("Deterministic test plan for %s:\n%s", operation["operation_id"], json.dumps([test_to_dict(test) for test in planned], indent=2))
+            all_tests.extend(planned)
     if not all_tests:
         raise SystemExit("No runnable tests could be derived from this specification.")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(render(all_tests, base_url), encoding="utf-8")
+    plan_out = args.plan_out or args.out.with_suffix(".plan.json")
+    plan_out.write_text(json.dumps([test_to_dict(test) for test in all_tests], indent=2) + "\n", encoding="utf-8")
     print(f"Generated {len(all_tests)} runnable pytest tests: {args.out}")
+    print(f"Saved test plan: {plan_out}")
     return 0
 
 
