@@ -23,3 +23,8 @@ rad.json
 TestResults.xml
 scope.md
 .avidea_env
+.venv/
+__pycache__/
+.pytest_cache/
+generated_tests/
+.env
