@@ -10,3 +10,6 @@ load_dotenv()
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+# Optional test-only endpoint called before every generated test. Leave empty
+# for real APIs that do not expose an isolated reset mechanism.
+TEST_RESET_PATH = os.getenv("TEST_RESET_PATH") or None

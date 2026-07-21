@@ -15,14 +15,21 @@ Copy-Item .env.example .env
 
 ## Start the demo API
 
-In a separate terminal, start the included FastAPI service. It exposes the
-same API as `sample_openapi.yaml`, including `GET /users?role=member&limit=10`.
+In a separate terminal, start the included FastAPI service. It exposes a CRUD
+team-directory API: list/filter/search users, create, read, partially update,
+and delete. It includes query parameters, optional correlation headers,
+pagination, request validation, reusable schemas, and 400/404/409 responses.
 
 ```powershell
 uvicorn demo_api:app --reload --port 8000
 ```
 
 Visit `http://localhost:8000/docs` to inspect the live Swagger UI.
+
+The demo also has a hidden `POST /__test/reset` endpoint, used only to reset
+its in-memory data before each generated test. `.env.example` enables it with
+`TEST_RESET_PATH=/__test/reset`. Do **not** configure a reset path for a real
+production API; use a disposable test environment and its normal setup flow.
 
 ## Generate tests
 

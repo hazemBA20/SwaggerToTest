@@ -1,74 +1,148 @@
 openapi: 3.0.3
 info:
-  title: Users API
+  title: Team Directory API
   version: 1.0.0
+  description: A realistic CRUD API used to test SwaggerToTest.
 servers:
   - url: http://localhost:8000
 paths:
   /users:
     get:
-      operationId: listUsersByRole
-      summary: List users filtered by role
+      operationId: listUsers
+      summary: List and filter users
       parameters:
+        - $ref: '#/components/parameters/RequestId'
         - name: role
           in: query
-          required: true
-          schema:
-            type: string
-            enum: [member, admin]
-          example: member
-        - name: limit
+          schema: { $ref: '#/components/schemas/Role' }
+        - name: active
           in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 10
+          schema: { type: boolean }
+        - name: search
+          in: query
+          schema: { type: string, minLength: 2, maxLength: 50 }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
       responses:
         '200':
-          description: Matching users
+          description: Paginated users
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
     post:
       operationId: createUser
       summary: Create a user
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [name, email]
-              properties:
-                name:
-                  type: string
-                  minLength: 1
-                  example: Ada Lovelace
-                email:
-                  type: string
-                  format: email
-                  example: ada@example.com
-                role:
-                  type: string
-                  enum: [member, admin]
+            schema: { $ref: '#/components/schemas/UserCreate' }
       responses:
         '201':
           description: User created
-        '400':
-          description: Invalid request
-  /users/{userId}:
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /users/{user_id}:
+    parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+        example: 123
+      - $ref: '#/components/parameters/RequestId'
     get:
       operationId: getUser
-      summary: Get a user
-      parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: integer
-            minimum: 1
-          example: 1
+      summary: Get one user
       responses:
         '200':
           description: User found
-        '404':
-          description: User not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateUser
+      summary: Partially update a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdate' }
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      operationId: deleteUser
+      summary: Delete a user
+      responses:
+        '204': { description: User deleted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  parameters:
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema: { type: string, minLength: 8, maxLength: 64 }
+      description: Optional request correlation ID.
+  responses:
+    BadRequest: { description: Invalid request input }
+    NotFound: { description: Resource not found }
+    Conflict: { description: Request conflicts with existing data }
+  schemas:
+    Role:
+      type: string
+      enum: [member, manager, admin]
+    UserCreate:
+      type: object
+      additionalProperties: false
+      required: [name, email]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 80, example: Katherine Johnson }
+        email: { type: string, format: email, example: katherine@example.com }
+        role: { $ref: '#/components/schemas/Role', default: member }
+        active: { type: boolean, default: true }
+    UserUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 2, maxLength: 80 }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+        active: { type: boolean }
+    User:
+      allOf:
+        - $ref: '#/components/schemas/UserCreate'
+        - type: object
+          required: [id]
+          properties:
+            id: { type: integer, minimum: 1 }
+    UserPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1, maximum: 100 }
