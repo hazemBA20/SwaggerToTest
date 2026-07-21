@@ -149,20 +149,53 @@ def safe_name(value: str) -> str:
 
 
 def groq_plan(operation: dict[str, Any], api_key: str, model: str) -> list[TestCase]:
-    schema = {"type": "object", "properties": {"tests": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "method": {"type": "string"}, "path": {"type": "string"}, "expected_status": {"type": "integer"}, "kind": {"type": "string"}, "query": {"type": "object"}, "headers": {"type": "object"}, "payload": {}}, "required": ["name", "method", "path", "expected_status"], "additionalProperties": False}}}, "required": ["tests"], "additionalProperties": False}
+    # Strict structured output disallows arbitrary-key objects. Keep those
+    # flexible values as JSON strings, then parse them below.
+    schema = {"type": "object", "properties": {"tests": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "method": {"type": "string"}, "path": {"type": "string"}, "expected_status": {"type": "integer"}, "kind": {"type": "string"}, "query_json": {"type": "string"}, "headers_json": {"type": "string"}, "payload_json": {"type": "string"}}, "required": ["name", "method", "path", "expected_status", "kind", "query_json", "headers_json", "payload_json"], "additionalProperties": False}}}, "required": ["tests"], "additionalProperties": False}
     instructions = ("Generate conservative API contract test plans from one OpenAPI operation. "
                     "Use only facts explicit in the operation. Do not invent fields, auth, endpoints, or status codes. "
-                    "Create one happy-path test only if a 2xx response is documented, and negative tests only for explicit constraints. Return JSON only.")
+                    "Create one happy-path test only if a 2xx response is documented, and negative tests only for explicit constraints. "
+                    "query_json, headers_json, and payload_json must each be valid JSON encoded as a string; use '{}' for empty query/headers and 'null' for no body. Return JSON only.")
     body = {"model": model, "messages": [{"role": "system", "content": instructions}, {"role": "user", "content": json.dumps(operation)}], "response_format": {"type": "json_schema", "json_schema": {"name": "test_plan", "strict": True, "schema": schema}}, "temperature": 0}
-    request = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions", data=json.dumps(body).encode(), headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
+    request = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=json.dumps(body).encode(),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            # Some API edge protections reject Python's default urllib agent.
+            "User-Agent": "SwaggerToTest/0.1 (OpenAPI contract-test generator)",
+        },
+    )
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             output = json.loads(response.read())["choices"][0]["message"]["content"]
     except urllib.error.HTTPError as error:
-        raise RuntimeError(f"Groq API returned HTTP {error.code}: {error.read().decode()}") from error
+        response_body = error.read().decode(errors="replace")
+        if error.code == 403 and "1010" in response_body:
+            ray_id = error.headers.get("cf-ray", "not supplied")
+            raise RuntimeError(
+                "Groq rejected this request at its edge (HTTP 403 / error 1010), before the model ran. "
+                "This is usually an IP/network or WAF restriction, not an OpenAPI, prompt, or test-generation error. "
+                f"Cloudflare Ray ID: {ray_id}. Try a different network or contact Groq support with that Ray ID."
+            ) from error
+        raise RuntimeError(f"Groq API returned HTTP {error.code}: {response_body}") from error
     data = json.loads(output)
     LOGGER.info("LLM test plan for %s:\n%s", operation["operation_id"], json.dumps(data, indent=2))
-    return [TestCase(**item) for item in data["tests"]]
+    tests: list[TestCase] = []
+    for item in data["tests"]:
+        try:
+            query = json.loads(item["query_json"])
+            headers = json.loads(item["headers_json"])
+            payload = json.loads(item["payload_json"])
+        except (KeyError, json.JSONDecodeError) as error:
+            raise RuntimeError(f"Groq returned an invalid JSON-encoded test value: {item}") from error
+        if not isinstance(query, dict) or not isinstance(headers, dict):
+            raise RuntimeError("Groq returned query_json or headers_json that is not a JSON object.")
+        tests.append(TestCase(name=item["name"], method=item["method"], path=item["path"],
+                              expected_status=item["expected_status"], kind=item["kind"],
+                              query=query, headers=headers, payload=payload))
+    return tests
 
 
 def render(tests: list[TestCase], base_url: str) -> str:

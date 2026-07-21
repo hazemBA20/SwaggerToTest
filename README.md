@@ -53,3 +53,11 @@ conservative positive/required-field-negative tests. The LLM is optional; it
 returns structured plans rather than executable code. Every run logs each
 operation and its plan, and saves the complete plan alongside generated code,
 for example `generated_tests/test_api.plan.json`.
+
+## Groq troubleshooting
+
+`HTTP 403 / error 1010` means Groq's network edge rejected the request before
+the model was invoked. It is different from a bad API key (`401`) or a model
+permission restriction (`403` with a JSON Groq error). Try another network,
+disable a restrictive proxy/VPN, and contact Groq support with the printed
+Cloudflare Ray ID if it persists. Do not put your API key in a support request.
