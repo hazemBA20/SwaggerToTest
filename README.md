@@ -39,12 +39,23 @@ The offline mode is deterministic and does not need an LLM key:
 python openapi_to_tests.py --spec sample_openapi.yaml --out generated_tests/test_api.py
 ```
 
-To ask Groq to propose the conservative test plan first:
+Use an LLM to propose additional test cases. Choose the provider in `.env`:
 
 ```powershell
-$env:GROQ_API_KEY = "gsk_..."
+# Groq
+# LLM_PROVIDER=groq
+# GROQ_API_KEY=gsk_...
+
+# Google AI Studio / Gemini
+# LLM_PROVIDER=google
+# GOOGLE_API_KEY=AIza...
+# GOOGLE_MODEL=gemini-2.5-flash
+
 python openapi_to_tests.py --spec sample_openapi.yaml --out generated_tests/test_api.py --llm
 ```
+
+`gemini-2.5-flash` is the Google default. You can temporarily override either
+choice with `--provider google --model gemini-2.5-flash`.
 
 Run the generated file against the API documented in `servers[0].url`, or
 override it:

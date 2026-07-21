@@ -12,7 +12,7 @@ from fastapi import FastAPI, Header, HTTPException, Path, Query, Request, Respon
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 app = FastAPI(title="Team Directory API", version="1.0.0", description="Demo CRUD API for contract-test generation.")
 
@@ -24,6 +24,7 @@ class Role(str, Enum):
 
 
 class UserCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=2, max_length=80, examples=["Katherine Johnson"])
     email: EmailStr = Field(examples=["katherine@example.com"])
     role: Role = Role.member
@@ -31,6 +32,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None, min_length=2, max_length=80)
     email: EmailStr | None = None
     role: Role | None = None
