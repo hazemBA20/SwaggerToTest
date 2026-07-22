@@ -28,3 +28,4 @@ __pycache__/
 .pytest_cache/
 generated_tests/
 .env
+karate.jar

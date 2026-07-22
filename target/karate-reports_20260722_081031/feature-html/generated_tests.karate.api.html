@@ -1,0 +1,5027 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <link rel="stylesheet" href="../res/bootstrap.min.css"/>
+    <link rel="stylesheet" href="../res/karate-report.css"/>
+    <link rel="icon" href="../res/favicon.ico"/>
+    <script src="../res/alpine.min.js" defer></script>
+    <title>Karate Feature</title>
+    <style>
+        .sidebar {
+            position: fixed;
+            top: 56px;
+            bottom: 0;
+            left: 0;
+            width: 220px;
+            overflow-y: auto;
+            border-right: 1px solid var(--bs-border-color);
+        }
+        .main-content {
+            margin-left: 220px;
+            padding: 1rem;
+        }
+        .step-row {
+            border-bottom: 1px solid var(--bs-border-color);
+            padding: 0.25rem 0;
+            font-family: var(--bs-font-monospace);
+            font-size: 0.875rem;
+        }
+        .step-row:hover {
+            background-color: var(--bs-tertiary-bg);
+        }
+        .step-row.clickable {
+            cursor: pointer;
+        }
+        .step-logs {
+            background-color: var(--bs-dark-bg-subtle);
+            border-radius: 0.25rem;
+            margin: 0.25rem 0 0.25rem 50px;
+            padding: 0.5rem;
+            font-size: 0.8rem;
+        }
+        .nav-scenario {
+            font-size: 0.8rem;
+            padding: 0.25rem 0.5rem;
+            border-left: 3px solid transparent;
+        }
+        .nav-scenario:hover {
+            background-color: var(--bs-tertiary-bg);
+        }
+        .nav-scenario.active {
+            border-left-color: var(--bs-primary);
+            background-color: var(--bs-tertiary-bg);
+        }
+        .log-indicator {
+            font-size: 0.6rem;
+            vertical-align: middle;
+        }
+        .nested-call {
+            border-left: 3px solid var(--bs-info);
+            margin: 0.5rem 0 0.5rem 50px;
+            padding-left: 0.5rem;
+            background-color: var(--bs-tertiary-bg);
+        }
+        .nested-scenario {
+            border-radius: 0.25rem;
+            margin: 0.25rem 0;
+            padding: 0.5rem;
+            font-size: 0.85rem;
+        }
+        .nested-scenario .nested-step {
+            font-family: var(--bs-font-monospace);
+            font-size: 0.8rem;
+            padding: 0.125rem 0;
+        }
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; }
+        }
+    </style>
+</head>
+<body x-data="KarateReport.featureData()">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="../karate-summary.html">
+                <img src="../res/karate-logo.svg" alt="Karate" height="32" class="d-inline-block align-middle me-2"/>
+                <span x-text="featureSimpleName">Feature</span>
+            </a>
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="../karate-summary.html">Summary</a>
+                </li>
+            </ul>
+            <button class="btn btn-sm btn-outline-light ms-2" @click="toggleTheme()" title="Toggle theme">
+                <span x-show="theme === 'light'">&#9790;</span>
+                <span x-show="theme === 'dark'">&#9788;</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Left Sidebar -->
+    <nav class="sidebar bg-body-tertiary pt-3">
+        <div class="px-3 mb-2">
+            <small class="text-muted">Scenarios</small>
+        </div>
+        <template x-for="scenario in data.scenarios" :key="scenario.refId">
+            <a class="nav-scenario d-block text-decoration-none"
+               :class="scenario.skipped ? 'text-warning' : (scenario.passed ? 'text-success' : 'text-danger')"
+               :href="'#' + scenario.refId"
+               :title="scenario.name">
+                <span class="fw-bold" x-text="scenario.refId"></span>
+                <span x-text="scenario.name ? ' ' + truncate(scenario.name, 20) : ''"></span>
+            </a>
+        </template>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content" style="margin-top: 56px;">
+        <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="../karate-summary.html">Summary</a></li>
+                <li class="breadcrumb-item active" aria-current="page" x-text="data.name || data.path">Feature</li>
+            </ol>
+        </nav>
+
+        <h4 x-text="data.name || 'Feature'">Feature Name</h4>
+        <p class="text-muted small" x-text="data.path">path/to/feature</p>
+
+        <!-- Scenarios -->
+        <template x-for="scenario in data.scenarios" :key="scenario.refId">
+            <div class="card mb-3" :id="scenario.refId">
+                <div class="card-header d-flex justify-content-between align-items-center py-2"
+                     :class="scenario.skipped ? 'bg-warning-subtle' : (scenario.passed ? 'bg-success-subtle' : 'bg-danger-subtle')">
+                    <span>
+                        <span class="fw-bold" x-text="scenario.refId"></span>
+                        <span x-text="scenario.name"></span>
+                        <template x-if="scenario.isOutlineExample">
+                            <span class="badge bg-info ms-1">Outline</span>
+                        </template>
+                        <template x-for="tag in scenario.tags || []" :key="tag">
+                            <span class="badge bg-secondary ms-1" x-text="tag"></span>
+                        </template>
+                    </span>
+                    <span>
+                        <small class="text-muted me-2" x-text="scenario.durationMillis + ' ms'"></small>
+                        <span x-show="scenario.skipped" class="badge bg-warning">SKIP</span>
+                        <span x-show="scenario.passed && !scenario.skipped" class="badge bg-success">PASS</span>
+                        <span x-show="!scenario.passed" class="badge bg-danger">FAIL</span>
+                    </span>
+                </div>
+                <div class="card-body p-0" x-html="renderSteps(scenario.steps)">
+                </div>
+                <!-- Scenario Error -->
+                <template x-if="scenario.error && !scenario.steps?.some(s => s.error)">
+                    <div class="card-footer bg-danger-subtle">
+                        <pre class="mb-0 small text-danger" x-text="scenario.error"></pre>
+                    </div>
+                </template>
+            </div>
+        </template>
+    </main>
+
+    <script src="../res/bootstrap.bundle.min.js"></script>
+    <script src="../res/karate-report.js"></script>
+    <script id="karate-data" type="application/json">{
+  "path": "generated_tests/karate/api.feature",
+  "name": "OpenAPI contract tests",
+  "relativePath": "generated_tests/karate/api.feature",
+  "passed": false,
+  "durationMillis": 1275,
+  "scenarios": [
+    {
+      "name": "listUsers: listUsers_happy_path",
+      "line": 12,
+      "passed": false,
+      "durationMillis": 314,
+      "startTime": 1784704092135,
+      "endTime": 1784704092449,
+      "refId": "[1:12]",
+      "sectionIndex": 1,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_listusers",
+        "@positive"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 17,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 12,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 281,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 13,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 14,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "params",
+          "text": "{\"page\": 1, \"page_size\": 10}",
+          "line": 15,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 16,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "200",
+          "line": 17,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "match",
+          "text": "response contains { \"items\": \"#[]\", \"total\": \"#number\", \"page\": \"#number\", \"page_size\": \"#number\" }",
+          "line": 18,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "listUsers: listUsers_invalid_search_length",
+      "line": 21,
+      "passed": false,
+      "durationMillis": 42,
+      "startTime": 1784704092455,
+      "endTime": 1784704092497,
+      "refId": "[2:21]",
+      "sectionIndex": 2,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_listusers",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 39,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 22,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 23,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "params",
+          "text": "{\"search\": \"a\"}",
+          "line": 24,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 25,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 26,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "listUsers: listUsers_invalid_page",
+      "line": 29,
+      "passed": false,
+      "durationMillis": 4,
+      "startTime": 1784704092498,
+      "endTime": 1784704092502,
+      "refId": "[3:29]",
+      "sectionIndex": 3,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_listusers",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 3,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 30,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 31,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "params",
+          "text": "{\"page\": 0}",
+          "line": 32,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 33,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 34,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "listUsers: listUsers_invalid_page_size",
+      "line": 37,
+      "passed": false,
+      "durationMillis": 46,
+      "startTime": 1784704092503,
+      "endTime": 1784704092549,
+      "refId": "[4:37]",
+      "sectionIndex": 4,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_listusers",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 46,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 38,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 39,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "params",
+          "text": "{\"page_size\": 101}",
+          "line": 40,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 41,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 42,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "listUsers: listUsers_invalid_header_length",
+      "line": 45,
+      "passed": false,
+      "durationMillis": 32,
+      "startTime": 1784704092549,
+      "endTime": 1784704092581,
+      "refId": "[5:45]",
+      "sectionIndex": 5,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_listusers",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 30,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 46,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 47,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "headers",
+          "text": "{\"X-Request-ID\": \"short\"}",
+          "line": 48,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 49,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 50,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "listUsers: success",
+      "line": 53,
+      "passed": false,
+      "durationMillis": 32,
+      "startTime": 1784704092581,
+      "endTime": 1784704092613,
+      "refId": "[6:53]",
+      "sectionIndex": 6,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_listusers",
+        "@positive"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 30,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 54,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 55,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 56,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "200",
+          "line": 57,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "match",
+          "text": "response contains { \"items\": \"#[]\", \"total\": \"#number\", \"page\": \"#number\", \"page_size\": \"#number\" }",
+          "line": 58,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "listUsers: rejects_invalid_role_query_enum",
+      "line": 61,
+      "passed": false,
+      "durationMillis": 16,
+      "startTime": 1784704092613,
+      "endTime": 1784704092629,
+      "refId": "[7:61]",
+      "sectionIndex": 7,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_listusers",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 13,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 62,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 63,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "params",
+          "text": "{\"role\": \"__invalid_enum_value__\"}",
+          "line": 64,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 65,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 66,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "createUser: Create user success",
+      "line": 69,
+      "passed": false,
+      "durationMillis": 32,
+      "startTime": 1784704092629,
+      "endTime": 1784704092661,
+      "refId": "[8:69]",
+      "sectionIndex": 8,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_createuser",
+        "@happy"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 30,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 70,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 71,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"Katherine Johnson\", \"email\": \"katherine@example.com\"}",
+          "line": 72,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 73,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "201",
+          "line": 74,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "match",
+          "text": "response contains { \"name\": \"#string\", \"email\": \"#string\", \"id\": \"#number\" }",
+          "line": 75,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "createUser: Create user invalid header length",
+      "line": 78,
+      "passed": false,
+      "durationMillis": 32,
+      "startTime": 1784704092661,
+      "endTime": 1784704092693,
+      "refId": "[9:78]",
+      "sectionIndex": 9,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_createuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 30,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 79,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 80,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "headers",
+          "text": "{\"X-Request-ID\": \"short\"}",
+          "line": 81,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"Katherine Johnson\", \"email\": \"katherine@example.com\"}",
+          "line": 82,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 83,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 84,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "createUser: Create user missing required fields",
+      "line": 87,
+      "passed": false,
+      "durationMillis": 38,
+      "startTime": 1784704092693,
+      "endTime": 1784704092731,
+      "refId": "[10:87]",
+      "sectionIndex": 10,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_createuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 37,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 88,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 89,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"Katherine Johnson\"}",
+          "line": 90,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 91,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 92,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "createUser: Create user invalid name length",
+      "line": 95,
+      "passed": false,
+      "durationMillis": 23,
+      "startTime": 1784704092731,
+      "endTime": 1784704092754,
+      "refId": "[11:95]",
+      "sectionIndex": 11,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_createuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 21,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 96,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 97,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"A\", \"email\": \"katherine@example.com\"}",
+          "line": 98,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 99,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 100,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "createUser: success",
+      "line": 103,
+      "passed": false,
+      "durationMillis": 31,
+      "startTime": 1784704092754,
+      "endTime": 1784704092785,
+      "refId": "[12:103]",
+      "sectionIndex": 12,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_createuser",
+        "@positive"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 30,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 104,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 105,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"Katherine Johnson\", \"email\": \"katherine@example.com\"}",
+          "line": 106,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 107,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "201",
+          "line": 108,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "match",
+          "text": "response contains { \"name\": \"#string\", \"email\": \"#string\", \"id\": \"#number\" }",
+          "line": 109,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "createUser: rejects_missing_name",
+      "line": 112,
+      "passed": false,
+      "durationMillis": 31,
+      "startTime": 1784704092785,
+      "endTime": 1784704092816,
+      "refId": "[13:112]",
+      "sectionIndex": 13,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_createuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 29,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 113,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 114,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"email\": \"katherine@example.com\"}",
+          "line": 115,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 116,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 117,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "createUser: rejects_missing_email",
+      "line": 120,
+      "passed": false,
+      "durationMillis": 26,
+      "startTime": 1784704092816,
+      "endTime": 1784704092842,
+      "refId": "[14:120]",
+      "sectionIndex": 14,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_createuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 25,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 121,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 122,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"Katherine Johnson\"}",
+          "line": 123,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 124,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 125,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "createUser: rejects_invalid_role_enum",
+      "line": 128,
+      "passed": false,
+      "durationMillis": 38,
+      "startTime": 1784704092842,
+      "endTime": 1784704092880,
+      "refId": "[15:128]",
+      "sectionIndex": 15,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_createuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 37,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 129,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 130,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"Katherine Johnson\", \"email\": \"katherine@example.com\", \"role\": \"__invalid_enum_value__\"}",
+          "line": 131,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 132,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 133,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "createUser: rejects_unknown_body_field",
+      "line": 136,
+      "passed": false,
+      "durationMillis": 33,
+      "startTime": 1784704092880,
+      "endTime": 1784704092913,
+      "refId": "[16:136]",
+      "sectionIndex": 16,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_createuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 31,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 137,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 138,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"Katherine Johnson\", \"email\": \"katherine@example.com\", \"unexpected_field\": true}",
+          "line": 139,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 140,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 141,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "createUser: rejects_duplicate_resource",
+      "line": 144,
+      "passed": false,
+      "durationMillis": 27,
+      "startTime": 1784704092913,
+      "endTime": 1784704092940,
+      "refId": "[17:144]",
+      "sectionIndex": 17,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_createuser",
+        "@stateful"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 25,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 145,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 146,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"Katherine Johnson\", \"email\": \"katherine@example.com\"}",
+          "line": 147,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 148,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "201",
+          "line": 149,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 150,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 151,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"Katherine Johnson\", \"email\": \"katherine@example.com\"}",
+          "line": 152,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 153,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "409",
+          "line": 154,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "getUser: Get user happy path",
+      "line": 157,
+      "passed": false,
+      "durationMillis": 37,
+      "startTime": 1784704092940,
+      "endTime": 1784704092977,
+      "refId": "[18:157]",
+      "sectionIndex": 18,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_getuser",
+        "@positive"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 37,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 158,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"123\"",
+          "line": 159,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "headers",
+          "text": "{\"X-Request-ID\": \"abcdefgh12345678\"}",
+          "line": 160,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 161,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "200",
+          "line": 162,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "match",
+          "text": "response contains { \"name\": \"#string\", \"email\": \"#string\", \"id\": \"#number\" }",
+          "line": 163,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "getUser: Get user invalid path parameter",
+      "line": 166,
+      "passed": false,
+      "durationMillis": 32,
+      "startTime": 1784704092977,
+      "endTime": 1784704093009,
+      "refId": "[19:166]",
+      "sectionIndex": 19,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_getuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 30,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 167,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"0\"",
+          "line": 168,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 169,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 170,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "getUser: Get user invalid header length",
+      "line": 173,
+      "passed": false,
+      "durationMillis": 15,
+      "startTime": 1784704093009,
+      "endTime": 1784704093024,
+      "refId": "[20:173]",
+      "sectionIndex": 20,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_getuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 14,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 174,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"123\"",
+          "line": 175,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "headers",
+          "text": "{\"X-Request-ID\": \"short\"}",
+          "line": 176,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 177,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 178,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "getUser: success",
+      "line": 181,
+      "passed": false,
+      "durationMillis": 26,
+      "startTime": 1784704093024,
+      "endTime": 1784704093050,
+      "refId": "[21:181]",
+      "sectionIndex": 21,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_getuser",
+        "@positive"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 25,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 182,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"1\"",
+          "line": 183,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 184,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "200",
+          "line": 185,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "match",
+          "text": "response contains { \"name\": \"#string\", \"email\": \"#string\", \"id\": \"#number\" }",
+          "line": 186,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "getUser: returns_not_found_for_missing_resource",
+      "line": 189,
+      "passed": false,
+      "durationMillis": 32,
+      "startTime": 1784704093050,
+      "endTime": 1784704093082,
+      "refId": "[22:189]",
+      "sectionIndex": 22,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_getuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 30,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 190,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"999999\"",
+          "line": 191,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 192,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "404",
+          "line": 193,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "updateUser: Update user success",
+      "line": 196,
+      "passed": false,
+      "durationMillis": 32,
+      "startTime": 1784704093082,
+      "endTime": 1784704093114,
+      "refId": "[23:196]",
+      "sectionIndex": 23,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_updateuser",
+        "@happy"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 29,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 197,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"123\"",
+          "line": 198,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "headers",
+          "text": "{\"X-Request-ID\": \"valid-request-id\"}",
+          "line": 199,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"John Doe\"}",
+          "line": 200,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "patch",
+          "line": 201,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "200",
+          "line": 202,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "match",
+          "text": "response contains { \"name\": \"#string\", \"email\": \"#string\", \"id\": \"#number\" }",
+          "line": 203,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "updateUser: Invalid user_id constraint",
+      "line": 206,
+      "passed": false,
+      "durationMillis": 27,
+      "startTime": 1784704093114,
+      "endTime": 1784704093141,
+      "refId": "[24:206]",
+      "sectionIndex": 24,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_updateuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 25,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 207,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"0\"",
+          "line": 208,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"John Doe\"}",
+          "line": 209,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "patch",
+          "line": 210,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 211,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "updateUser: Invalid X-Request-ID length",
+      "line": 214,
+      "passed": false,
+      "durationMillis": 39,
+      "startTime": 1784704093141,
+      "endTime": 1784704093180,
+      "refId": "[25:214]",
+      "sectionIndex": 25,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_updateuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 39,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 215,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"123\"",
+          "line": 216,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "headers",
+          "text": "{\"X-Request-ID\": \"short\"}",
+          "line": 217,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"John Doe\"}",
+          "line": 218,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "patch",
+          "line": 219,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 220,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "updateUser: Empty payload",
+      "line": 223,
+      "passed": false,
+      "durationMillis": 31,
+      "startTime": 1784704093180,
+      "endTime": 1784704093211,
+      "refId": "[26:223]",
+      "sectionIndex": 26,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_updateuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 29,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 224,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"123\"",
+          "line": 225,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{}",
+          "line": 226,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "patch",
+          "line": 227,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 228,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "updateUser: Invalid name length",
+      "line": 231,
+      "passed": false,
+      "durationMillis": 16,
+      "startTime": 1784704093211,
+      "endTime": 1784704093227,
+      "refId": "[27:231]",
+      "sectionIndex": 27,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_updateuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 15,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 232,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"123\"",
+          "line": 233,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"A\"}",
+          "line": 234,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "patch",
+          "line": 235,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 236,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "updateUser: success",
+      "line": 239,
+      "passed": false,
+      "durationMillis": 5,
+      "startTime": 1784704093227,
+      "endTime": 1784704093232,
+      "refId": "[28:239]",
+      "sectionIndex": 28,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_updateuser",
+        "@positive"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 3,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 240,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"1\"",
+          "line": 241,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"example\"}",
+          "line": 242,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "patch",
+          "line": 243,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "200",
+          "line": 244,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "match",
+          "text": "response contains { \"name\": \"#string\", \"email\": \"#string\", \"id\": \"#number\" }",
+          "line": 245,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "updateUser: rejects_invalid_role_enum",
+      "line": 248,
+      "passed": false,
+      "durationMillis": 3,
+      "startTime": 1784704093233,
+      "endTime": 1784704093236,
+      "refId": "[29:248]",
+      "sectionIndex": 29,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_updateuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 2,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 249,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"1\"",
+          "line": 250,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"example\", \"role\": \"__invalid_enum_value__\"}",
+          "line": 251,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "patch",
+          "line": 252,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 253,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "updateUser: rejects_unknown_body_field",
+      "line": 256,
+      "passed": false,
+      "durationMillis": 23,
+      "startTime": 1784704093236,
+      "endTime": 1784704093259,
+      "refId": "[30:256]",
+      "sectionIndex": 30,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_updateuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 22,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 257,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"1\"",
+          "line": 258,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"example\", \"unexpected_field\": true}",
+          "line": 259,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "patch",
+          "line": 260,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 261,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "updateUser: returns_not_found_for_missing_resource",
+      "line": 264,
+      "passed": false,
+      "durationMillis": 16,
+      "startTime": 1784704093259,
+      "endTime": 1784704093275,
+      "refId": "[31:264]",
+      "sectionIndex": 31,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_updateuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 15,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 265,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"999999\"",
+          "line": 266,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"example\"}",
+          "line": 267,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "patch",
+          "line": 268,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "404",
+          "line": 269,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "deleteUser: Delete user success",
+      "line": 272,
+      "passed": false,
+      "durationMillis": 25,
+      "startTime": 1784704093275,
+      "endTime": 1784704093300,
+      "refId": "[32:272]",
+      "sectionIndex": 32,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_deleteuser",
+        "@happy_path"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 24,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 273,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"123\"",
+          "line": 274,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "headers",
+          "text": "{\"X-Request-ID\": \"abcdefgh12345678\"}",
+          "line": 275,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "delete",
+          "line": 276,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 277,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "deleteUser: Delete user invalid path parameter",
+      "line": 280,
+      "passed": false,
+      "durationMillis": 32,
+      "startTime": 1784704093300,
+      "endTime": 1784704093332,
+      "refId": "[33:280]",
+      "sectionIndex": 33,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_deleteuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 30,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 281,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"0\"",
+          "line": 282,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "delete",
+          "line": 283,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 284,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "deleteUser: Delete user invalid header length",
+      "line": 287,
+      "passed": false,
+      "durationMillis": 17,
+      "startTime": 1784704093332,
+      "endTime": 1784704093349,
+      "refId": "[34:287]",
+      "sectionIndex": 34,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_deleteuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 16,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 288,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"123\"",
+          "line": 289,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "headers",
+          "text": "{\"X-Request-ID\": \"short\"}",
+          "line": 290,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "delete",
+          "line": 291,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "400",
+          "line": 292,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "deleteUser: success",
+      "line": 295,
+      "passed": false,
+      "durationMillis": 2,
+      "startTime": 1784704093349,
+      "endTime": 1784704093351,
+      "refId": "[35:295]",
+      "sectionIndex": 35,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_deleteuser",
+        "@positive"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 2,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 296,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"1\"",
+          "line": 297,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "delete",
+          "line": 298,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 299,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    },
+    {
+      "name": "deleteUser: returns_not_found_for_missing_resource",
+      "line": 302,
+      "passed": false,
+      "durationMillis": 29,
+      "startTime": 1784704093351,
+      "endTime": 1784704093380,
+      "refId": "[36:302]",
+      "sectionIndex": 36,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@operation_deleteuser",
+        "@negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "failed",
+          "durationMillis": 27,
+          "hasLogs": false,
+          "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 303,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", \"999999\"",
+          "line": 304,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "delete",
+          "line": 305,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "404",
+          "line": 306,
+          "status": "skipped",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ],
+      "error": "org.apache.hc.client5.http.HttpHostConnectException: Connect to http://localhost:8000 failed: Connection refused: getsockopt"
+    }
+  ]
+}</script>
+</body>
+</html>

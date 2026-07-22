@@ -33,10 +33,13 @@ production API; use a disposable test environment and its normal setup flow.
 
 ## Generate tests
 
-The offline mode is deterministic and does not need an LLM key:
+The offline mode is deterministic and does not need an LLM key. Generate
+pytest, Karate, or both from the same plan:
 
 ```powershell
 python openapi_to_tests.py --spec sample_openapi.yaml --out generated_tests/test_api.py
+python openapi_to_tests.py --spec sample_openapi.yaml --target karate
+python openapi_to_tests.py --spec sample_openapi.yaml --target both --out generated_tests/pytest/test_api.py
 ```
 
 Use an LLM to propose additional test cases. Choose the provider in `.env`:
@@ -64,6 +67,18 @@ override it:
 $env:API_BASE_URL = "http://localhost:8000"
 pytest generated_tests/test_api.py
 ```
+
+## Run Karate output
+
+Install the Karate CLI (and Java 21+ if using the standalone JAR), then run:
+
+```powershell
+karate run generated_tests/karate -Dapi.baseUrl=http://localhost:8000
+```
+
+The Karate renderer generates `.feature` scenarios from the same shared plan
+as pytest, including request setup, parameters, headers, JSON bodies, status
+checks, reset isolation, and basic response-shape checks.
 
 The output file is runnable Python and uses `httpx`. It currently supports
 local `$ref` values, JSON request bodies, required path/query parameters, and
