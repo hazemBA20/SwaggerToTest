@@ -73,7 +73,15 @@ pytest generated_tests/test_api.py
 Install the Karate CLI (and Java 21+ if using the standalone JAR), then run:
 
 ```powershell
-karate run generated_tests/karate -Dapi.baseUrl=http://localhost:8000
+# The generated feature defaults to http://localhost:8000, so no override is needed.
+karate run generated_tests/karate
+```
+
+When using the standalone JAR and overriding the URL, pass the Java property
+before `-jar`:
+
+```powershell
+java -Dapi.baseUrl=http://localhost:8000 -jar karate.jar generated_tests/karate
 ```
 
 The Karate renderer generates `.feature` scenarios from the same shared plan
