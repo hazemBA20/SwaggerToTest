@@ -29,3 +29,5 @@ __pycache__/
 generated_tests/
 .env
 karate.jar
+phase2.md
+explanations.md
