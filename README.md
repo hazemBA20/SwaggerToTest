@@ -42,6 +42,31 @@ python openapi_to_tests.py --spec sample_openapi.yaml --target karate
 python openapi_to_tests.py --spec sample_openapi.yaml --target both --out generated_tests/pytest/test_api.py
 ```
 
+Generate deterministic CRUD integration flows with `--integration`:
+
+```powershell
+python openapi_to_tests.py --spec sample_openapi.yaml --target both --out generated_tests/test_api.py --integration
+```
+
+To generate and run only the integration pipeline, use separate default files:
+
+```powershell
+python openapi_to_tests.py --spec sample_openapi.yaml --target both --integration-only
+pytest generated_tests/test_integration.py
+karate run generated_tests/karate/integration.feature
+```
+
+This mode builds a dependency graph from documented `POST` response `id`
+fields and matching member-path parameters such as `{user_id}`. For the
+included API, it generates a create → get → patch → delete lifecycle and a
+create → delete → get (`404`) flow. Each flow uses `TEST_RESET_PATH` once at
+its start for isolation. The run also writes adjacent `.graph.json` and
+`.flows.json` artifacts so the inferred edges and flow plan are auditable.
+Integration generation fails when no reset path is configured; use a
+disposable API environment with an equivalent reset mechanism.
+The optional `--llm` mode still adds only validated single-operation cases;
+the demo dependency graph and integration flows remain deterministic.
+
 Use an LLM to propose additional test cases. Choose the provider in `.env`:
 
 ```powershell

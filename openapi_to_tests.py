@@ -41,6 +41,35 @@ class TestCase:
     setup: list[dict[str, Any]] = field(default_factory=list)
 
 
+@dataclass
+class DependencyEdge:
+    producer_operation_id: str
+    consumer_operation_id: str
+    response_field: str
+    path_parameter: str
+
+
+@dataclass
+class FlowStep:
+    operation_id: str
+    method: str
+    path: str
+    expected_status: int
+    query: dict[str, Any] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict)
+    payload: Any | None = None
+    response_schema: dict[str, Any] | None = None
+    extract: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class TestFlow:
+    name: str
+    kind: str
+    isolation: dict[str, str]
+    steps: list[FlowStep]
+
+
 def test_to_dict(test: TestCase) -> dict[str, Any]:
     return {
         "name": test.name, "kind": test.kind, "method": test.method,
@@ -48,6 +77,28 @@ def test_to_dict(test: TestCase) -> dict[str, Any]:
         "payload": test.payload, "expected_status": test.expected_status,
         "operation_id": test.operation_id, "response_schema": test.response_schema,
         "setup": test.setup,
+    }
+
+
+def flow_to_dict(flow: TestFlow) -> dict[str, Any]:
+    return {
+        "name": flow.name,
+        "kind": flow.kind,
+        "isolation": flow.isolation,
+        "steps": [
+            {
+                "operation_id": step.operation_id,
+                "method": step.method,
+                "path": step.path,
+                "query": step.query,
+                "headers": step.headers,
+                "payload": step.payload,
+                "expected_status": step.expected_status,
+                "response_schema": step.response_schema,
+                "extract": step.extract,
+            }
+            for step in flow.steps
+        ],
     }
 
 
@@ -121,6 +172,123 @@ def normalized_operations(spec: dict[str, Any]) -> list[dict[str, Any]]:
                 "responses": operation.get("responses", {}),
             })
     return operations
+
+
+def success_status(operation: dict[str, Any]) -> int | None:
+    statuses = [int(code) for code in operation["responses"] if code.isdigit() and 200 <= int(code) < 300]
+    return min(statuses) if statuses else None
+
+
+def schema_has_field(schema: dict[str, Any] | None, field_name: str) -> bool:
+    if not schema:
+        return False
+    if field_name in schema.get("properties", {}):
+        return True
+    return any(schema_has_field(child, field_name) for child in schema.get("allOf", []))
+
+
+def path_parameters(operation: dict[str, Any]) -> list[dict[str, Any]]:
+    return [parameter for parameter in operation["parameters"] if parameter.get("in") == "path"]
+
+
+def build_dependency_graph(spec: dict[str, Any], operations: list[dict[str, Any]]) -> list[DependencyEdge]:
+    """Infer safe CRUD dependencies from POST response IDs and member path parameters."""
+    edges: list[DependencyEdge] = []
+    for producer in operations:
+        if producer["method"] != "POST" or not success_status(producer):
+            continue
+        producer_schema = response_schema(spec, producer, success_status(producer))
+        if not schema_has_field(producer_schema, "id"):
+            continue
+        for consumer in operations:
+            if not consumer["path"].startswith(producer["path"] + "/{"):
+                continue
+            for parameter in path_parameters(consumer):
+                parameter_name = parameter["name"]
+                if parameter_name == "id" or parameter_name.endswith("_id"):
+                    edges.append(DependencyEdge(
+                        producer_operation_id=producer["operation_id"],
+                        consumer_operation_id=consumer["operation_id"],
+                        response_field="id",
+                        path_parameter=parameter_name,
+                    ))
+    return edges
+
+
+def graph_to_dict(edges: list[DependencyEdge]) -> dict[str, Any]:
+    return {"edges": [edge.__dict__ for edge in edges]}
+
+
+def step_for_operation(spec: dict[str, Any], operation: dict[str, Any], path: str, payload: Any | None = None,
+                       extract: dict[str, str] | None = None) -> FlowStep:
+    status = success_status(operation)
+    if status is None:
+        raise ValueError(f"Operation {operation['operation_id']} has no successful response.")
+    if payload is None and operation["request_body_schema"]:
+        payload = example_for_schema(spec, operation["request_body_schema"])
+    return FlowStep(
+        operation_id=operation["operation_id"], method=operation["method"], path=path,
+        expected_status=status, payload=payload, response_schema=response_schema(spec, operation, status),
+        extract=extract or {},
+    )
+
+
+def deterministic_flows(spec: dict[str, Any], operations: list[dict[str, Any]], edges: list[DependencyEdge],
+                        reset_path: str | None) -> list[TestFlow]:
+    """Create CRUD lifecycle flows from validated graph edges for the demo scope."""
+    if not reset_path:
+        raise ValueError("Integration flows require --reset-path or TEST_RESET_PATH for isolation.")
+    by_id = {operation["operation_id"]: operation for operation in operations}
+    flows: list[TestFlow] = []
+    for edge in edges:
+        producer = by_id[edge.producer_operation_id]
+        consumers = [by_id[candidate.consumer_operation_id] for candidate in edges
+                     if candidate.producer_operation_id == producer["operation_id"]]
+        by_method = {consumer["method"]: consumer for consumer in consumers}
+        if not {"GET", "PATCH", "DELETE"}.issubset(by_method):
+            continue
+        binding = "created_resource_id"
+        member_path = producer["path"] + "/{" + binding + "}"
+        create_step = step_for_operation(spec, producer, producer["path"], extract={binding: edge.response_field})
+        get_step = step_for_operation(spec, by_method["GET"], member_path)
+        update_step = step_for_operation(spec, by_method["PATCH"], member_path)
+        delete_step = step_for_operation(spec, by_method["DELETE"], member_path)
+        isolation = {"kind": "reset", "path": reset_path}
+        flows.append(TestFlow("crud_lifecycle", "lifecycle", isolation, [create_step, get_step, update_step, delete_step]))
+        not_found = 404 if "404" in by_method["GET"]["responses"] else None
+        if not_found:
+            after_delete = FlowStep(
+                operation_id=by_method["GET"]["operation_id"], method="GET", path=member_path,
+                expected_status=not_found,
+            )
+            flows.append(TestFlow("deleted_resource_is_not_found", "lifecycle_negative", isolation,
+                                  [create_step, delete_step, after_delete]))
+        break
+    return flows
+
+
+def validate_flows(operations: list[dict[str, Any]], edges: list[DependencyEdge], flows: list[TestFlow]) -> None:
+    operation_by_id = {operation["operation_id"]: operation for operation in operations}
+    valid_edges = {(edge.producer_operation_id, edge.consumer_operation_id, edge.response_field) for edge in edges}
+    for flow in flows:
+        if flow.isolation.get("kind") != "reset" or not flow.isolation.get("path"):
+            raise ValueError(f"Flow {flow.name} has no supported isolation strategy.")
+        bindings: dict[str, tuple[str, str]] = {}
+        for step in flow.steps:
+            operation = operation_by_id.get(step.operation_id)
+            if not operation or step.expected_status not in {int(code) for code in operation["responses"] if code.isdigit()}:
+                raise ValueError(f"Flow {flow.name} uses an undocumented operation or status.")
+            required_bindings = set(re.findall(r"{([a-zA-Z_][a-zA-Z0-9_]*)}", step.path))
+            if not required_bindings.issubset(bindings):
+                raise ValueError(f"Flow {flow.name} uses a binding before it is extracted.")
+            for binding in required_bindings:
+                producer_operation_id, field = bindings[binding]
+                if (producer_operation_id, step.operation_id, field) not in valid_edges:
+                    raise ValueError(f"Flow {flow.name} uses a transition that is not in the dependency graph.")
+            for binding, field in step.extract.items():
+                if not schema_has_field(step.response_schema, field):
+                    raise ValueError(f"Flow {flow.name} extracts an undocumented response field.")
+                bindings[binding] = (step.operation_id, field)
 
 
 def response_schema(spec: dict[str, Any], operation: dict[str, Any], status: int) -> dict[str, Any] | None:
@@ -313,7 +481,7 @@ def llm_plan(operation: dict[str, Any], provider: str, model: str, api_key: str)
     raise ValueError("LLM_PROVIDER must be either 'groq' or 'google'.")
 
 
-def render(tests: list[TestCase], base_url: str, reset_path: str | None) -> str:
+def render(tests: list[TestCase], base_url: str, reset_path: str | None, flows: list[TestFlow] | None = None) -> str:
     names: set[str] = set()
     function_names: list[str] = []
     for test in tests:
@@ -322,7 +490,7 @@ def render(tests: list[TestCase], base_url: str, reset_path: str | None) -> str:
             raise ValueError(f"Duplicate generated test function name: {function_name}")
         names.add(function_name)
         function_names.append(function_name)
-    lines = ["\"\"\"Generated by openapi_to_tests.py. Do not edit generated output.\"\"\"", "import os", "import httpx", "import pytest", "", f"BASE_URL = os.getenv(\"API_BASE_URL\", {base_url!r}).rstrip(\"/\")", f"TEST_RESET_PATH = os.getenv(\"TEST_RESET_PATH\", {reset_path!r})", "", "def assert_json_matches_schema(value, schema, location='response'):", "    for child_schema in schema.get('allOf', []):", "        assert_json_matches_schema(value, child_schema, location)", "    if 'enum' in schema:", "        assert value in schema['enum'], f'{location} is not an allowed enum value: {value!r}'", "    expected_type = schema.get('type')", "    type_checks = {'object': dict, 'array': list, 'string': str, 'integer': int, 'number': (int, float), 'boolean': bool}", "    if expected_type in type_checks:", "        assert isinstance(value, type_checks[expected_type]), f'{location} should be {expected_type}'", "    if expected_type == 'object' or 'properties' in schema:", "        for name in schema.get('required', []):", "            assert name in value, f'{location} is missing required field {name}'", "        for name, child_schema in schema.get('properties', {}).items():", "            if name in value:", "                assert_json_matches_schema(value[name], child_schema, f'{location}.{name}')", "    if expected_type == 'array' and 'items' in schema:", "        for index, item in enumerate(value):", "            assert_json_matches_schema(item, schema['items'], f'{location}[{index}]')", "", "@pytest.fixture", "def client():", "    with httpx.Client(base_url=BASE_URL, timeout=10.0) as api_client:", "        if TEST_RESET_PATH:", "            reset_response = api_client.post(TEST_RESET_PATH)", "            assert reset_response.status_code == 204, f'Could not reset test data: {reset_response.status_code}'", "        yield api_client", ""]
+    lines = ["\"\"\"Generated by openapi_to_tests.py. Do not edit generated output.\"\"\"", "import os", "import httpx", "import pytest", "", f"BASE_URL = os.getenv(\"API_BASE_URL\", {base_url!r}).rstrip(\"/\")", f"TEST_RESET_PATH = os.getenv(\"TEST_RESET_PATH\", {reset_path!r})", "", "def assert_json_matches_schema(value, schema, location='response'):", "    for child_schema in schema.get('allOf', []):", "        assert_json_matches_schema(value, child_schema, location)", "    if 'enum' in schema:", "        assert value in schema['enum'], f'{location} is not an allowed enum value: {value!r}'", "    expected_type = schema.get('type')", "    type_checks = {'object': dict, 'array': list, 'string': str, 'integer': int, 'number': (int, float), 'boolean': bool}", "    if expected_type in type_checks:", "        assert isinstance(value, type_checks[expected_type]), f'{location} should be {expected_type}'", "    if expected_type == 'object' or 'properties' in schema:", "        for name in schema.get('required', []):", "            assert name in value, f'{location} is missing required field {name}'", "        for name, child_schema in schema.get('properties', {}).items():", "            if name in value:", "                assert_json_matches_schema(value[name], child_schema, f'{location}.{name}')", "    if expected_type == 'array' and 'items' in schema:", "        for index, item in enumerate(value):", "            assert_json_matches_schema(item, schema['items'], f'{location}[{index}]')", "", "def resolve_bindings(value, bindings):", "    if isinstance(value, str):", "        return value.format_map(bindings)", "    if isinstance(value, list):", "        return [resolve_bindings(item, bindings) for item in value]", "    if isinstance(value, dict):", "        return {key: resolve_bindings(item, bindings) for key, item in value.items()}", "    return value", "", "@pytest.fixture", "def client():", "    with httpx.Client(base_url=BASE_URL, timeout=10.0) as api_client:", "        if TEST_RESET_PATH:", "            reset_response = api_client.post(TEST_RESET_PATH)", "            assert reset_response.status_code == 204, f'Could not reset test data: {reset_response.status_code}'", "        yield api_client", ""]
     for test, function_name in zip(tests, function_names):
         lines.append(f"def {function_name}(client):")
         for setup in test.setup:
@@ -330,6 +498,18 @@ def render(tests: list[TestCase], base_url: str, reset_path: str | None) -> str:
         lines += [f"    response = client.request({test.method!r}, {test.path!r}, params={test.query!r}, headers={test.headers!r}, json={test.payload!r})", f"    assert response.status_code == {test.expected_status}"]
         if test.response_schema:
             lines.append(f"    assert_json_matches_schema(response.json(), {test.response_schema!r})")
+        lines.append("")
+    for flow in flows or []:
+        lines += [f"def test_flow_{safe_name(flow.name)}(client):", "    bindings = {}"]
+        for step in flow.steps:
+            lines += [
+                f"    response = client.request({step.method!r}, resolve_bindings({step.path!r}, bindings), params=resolve_bindings({step.query!r}, bindings), headers=resolve_bindings({step.headers!r}, bindings), json=resolve_bindings({step.payload!r}, bindings))",
+                f"    assert response.status_code == {step.expected_status}",
+            ]
+            if step.response_schema:
+                lines.append(f"    assert_json_matches_schema(response.json(), {step.response_schema!r})")
+            for binding, field_name in step.extract.items():
+                lines.append(f"    bindings[{binding!r}] = response.json()[{field_name!r}]")
         lines.append("")
     return "\n".join(lines)
 
@@ -349,7 +529,12 @@ def karate_matchers(schema: dict[str, Any]) -> dict[str, str]:
 
 
 def karate_path(path: str) -> str:
-    parts = [json.dumps(part) for part in path.strip("/").split("/") if part]
+    parts = []
+    for part in path.strip("/").split("/"):
+        if not part:
+            continue
+        match = re.fullmatch(r"{([a-zA-Z_][a-zA-Z0-9_]*)}", part)
+        parts.append(match.group(1) if match else json.dumps(part))
     return ", ".join(parts) or "''"
 
 
@@ -364,7 +549,7 @@ def render_karate_request(lines: list[str], method: str, path: str, query: dict[
     lines.append(f"  When method {method.lower()}")
 
 
-def render_karate(tests: list[TestCase], base_url: str, reset_path: str | None) -> str:
+def render_karate(tests: list[TestCase], base_url: str, reset_path: str | None, flows: list[TestFlow] | None = None) -> str:
     scenario_names: set[str] = set()
     lines = ["# Generated by openapi_to_tests.py. Do not edit generated output.", "Feature: OpenAPI contract tests", "", "Background:", f"  * def baseUrl = karate.properties['api.baseUrl'] || {json.dumps(base_url)}"]
     if reset_path:
@@ -386,6 +571,13 @@ def render_karate(tests: list[TestCase], base_url: str, reset_path: str | None) 
             if matchers:
                 match_object = ", ".join(f"{json.dumps(key)}: {json.dumps(value)}" for key, value in matchers.items())
                 lines.append(f"  And match response contains {{ {match_object} }}")
+    for flow in flows or []:
+        lines += ["", f"@flow @{safe_name(flow.kind)}", f"Scenario: flow: {flow.name}"]
+        for step in flow.steps:
+            render_karate_request(lines, step.method, step.path, step.query, step.headers, step.payload)
+            lines.append(f"  Then status {step.expected_status}")
+            for binding, field_name in step.extract.items():
+                lines.append(f"  * def {binding} = response.{field_name}")
     return "\n".join(lines) + "\n"
 
 
@@ -403,49 +595,79 @@ def main() -> int:
     parser.add_argument("--base-url", default=None)
     parser.add_argument("--reset-path", default=TEST_RESET_PATH, help="Optional endpoint called before every generated test.")
     parser.add_argument("--llm", action="store_true", help="Use the configured LLM provider to make the test plan.")
+    parser.add_argument("--integration", action="store_true", help="Generate deterministic CRUD integration flows from the dependency graph.")
+    parser.add_argument("--integration-only", action="store_true", help="Generate only integration flows in separate default output files.")
+    parser.add_argument("--graph-out", type=Path, default=None, help="Where to write the inferred dependency graph JSON.")
+    parser.add_argument("--flow-plan-out", type=Path, default=None, help="Where to write the integration flow plan JSON.")
     parser.add_argument("--provider", choices=["groq", "google"], default=LLM_PROVIDER, help="Overrides LLM_PROVIDER from .env.")
     parser.add_argument("--model", default=None, help="Overrides GROQ_MODEL or GOOGLE_MODEL from .env.")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     args = parser.parse_args()
+    if args.integration_only:
+        if args.llm:
+            parser.error("--llm cannot be combined with --integration-only in this deterministic demo.")
+        args.integration = True
+        if args.out == Path("generated_tests/test_generated_api.py"):
+            args.out = Path("generated_tests/test_integration.py")
+        if args.karate_out == Path("generated_tests/karate/api.feature"):
+            args.karate_out = Path("generated_tests/karate/integration.feature")
     logging.basicConfig(level=getattr(logging, args.log_level), format="%(levelname)s %(message)s")
     spec = load_spec(args.spec)
+    operations = normalized_operations(spec)
     base_url = args.base_url or os.getenv("API_BASE_URL") or spec.get("servers", [{}])[0].get("url", API_BASE_URL)
     all_tests: list[TestCase] = []
     provider = args.provider
     key = GROQ_API_KEY if provider == "groq" else GOOGLE_API_KEY
     model = args.model or (GROQ_MODEL if provider == "groq" else GOOGLE_MODEL)
-    if args.llm:
+    if args.llm and not args.integration_only:
         LOGGER.info("Using LLM provider=%s model=%s", provider, model)
-    for operation in normalized_operations(spec):
-        LOGGER.info("Processing %s %s (%s)", operation["method"], operation["path"], operation["operation_id"])
-        if args.llm:
-            if not key:
-                variable = "GROQ_API_KEY" if provider == "groq" else "GOOGLE_API_KEY"
-                raise SystemExit(f"--llm with LLM_PROVIDER={provider} requires the {variable} environment variable.")
-            llm_tests = attach_contract_metadata(spec, operation, llm_plan(operation, provider, model, key))
-            all_tests.extend(llm_tests)
-            # The LLM adds breadth; deterministic cases guarantee explicit constraints are covered.
-            all_tests.extend(offline_plan(spec, operation))
-        else:
-            planned = offline_plan(spec, operation)
-            LOGGER.info("Deterministic test plan for %s:\n%s", operation["operation_id"], json.dumps([test_to_dict(test) for test in planned], indent=2))
-            all_tests.extend(planned)
-    if not all_tests:
+    if not args.integration_only:
+        for operation in operations:
+            LOGGER.info("Processing %s %s (%s)", operation["method"], operation["path"], operation["operation_id"])
+            if args.llm:
+                if not key:
+                    variable = "GROQ_API_KEY" if provider == "groq" else "GOOGLE_API_KEY"
+                    raise SystemExit(f"--llm with LLM_PROVIDER={provider} requires the {variable} environment variable.")
+                llm_tests = attach_contract_metadata(spec, operation, llm_plan(operation, provider, model, key))
+                all_tests.extend(llm_tests)
+                # The LLM adds breadth; deterministic cases guarantee explicit constraints are covered.
+                all_tests.extend(offline_plan(spec, operation))
+            else:
+                planned = offline_plan(spec, operation)
+                LOGGER.info("Deterministic test plan for %s:\n%s", operation["operation_id"], json.dumps([test_to_dict(test) for test in planned], indent=2))
+                all_tests.extend(planned)
+    flows: list[TestFlow] = []
+    edges: list[DependencyEdge] = []
+    if args.integration:
+        edges = build_dependency_graph(spec, operations)
+        flows = deterministic_flows(spec, operations, edges, args.reset_path)
+        validate_flows(operations, edges, flows)
+        if not flows:
+            raise SystemExit("No supported CRUD integration flows could be derived from this specification.")
+        LOGGER.info("Generated %d deterministic integration flows from %d graph edges.", len(flows), len(edges))
+    if not all_tests and not flows:
         raise SystemExit("No runnable tests could be derived from this specification.")
     if args.target in {"pytest", "both"}:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(render(all_tests, base_url, args.reset_path), encoding="utf-8")
-        print(f"Generated {len(all_tests)} runnable pytest tests: {args.out}")
+        args.out.write_text(render(all_tests, base_url, args.reset_path, flows), encoding="utf-8")
+        print(f"Generated {len(all_tests)} pytest tests and {len(flows)} integration flows: {args.out}")
     if args.target in {"karate", "both"}:
         args.karate_out.parent.mkdir(parents=True, exist_ok=True)
-        args.karate_out.write_text(render_karate(all_tests, base_url, args.reset_path), encoding="utf-8")
+        args.karate_out.write_text(render_karate(all_tests, base_url, args.reset_path, flows), encoding="utf-8")
         config_path = args.karate_out.parent / "karate-config.js"
         config_path.write_text(render_karate_config(base_url), encoding="utf-8")
-        print(f"Generated {len(all_tests)} Karate scenarios: {args.karate_out}")
+        print(f"Generated {len(all_tests)} Karate scenarios and {len(flows)} integration flows: {args.karate_out}")
         print(f"Generated Karate configuration: {config_path}")
     plan_out = args.plan_out or (args.karate_out.with_suffix(".plan.json") if args.target == "karate" else args.out.with_suffix(".plan.json"))
     plan_out.write_text(json.dumps([test_to_dict(test) for test in all_tests], indent=2) + "\n", encoding="utf-8")
     print(f"Saved test plan: {plan_out}")
+    if args.integration:
+        graph_out = args.graph_out or plan_out.with_name(plan_out.stem + ".graph.json")
+        flow_plan_out = args.flow_plan_out or plan_out.with_name(plan_out.stem + ".flows.json")
+        graph_out.write_text(json.dumps(graph_to_dict(edges), indent=2) + "\n", encoding="utf-8")
+        flow_plan_out.write_text(json.dumps([flow_to_dict(flow) for flow in flows], indent=2) + "\n", encoding="utf-8")
+        print(f"Saved dependency graph: {graph_out}")
+        print(f"Saved integration flow plan: {flow_plan_out}")
     return 0
 
 
