@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <link rel="stylesheet" href="../res/bootstrap.min.css"/>
+    <link rel="stylesheet" href="../res/karate-report.css"/>
+    <link rel="icon" href="../res/favicon.ico"/>
+    <script src="../res/alpine.min.js" defer></script>
+    <title>Karate Feature</title>
+    <style>
+        .sidebar {
+            position: fixed;
+            top: 56px;
+            bottom: 0;
+            left: 0;
+            width: 220px;
+            overflow-y: auto;
+            border-right: 1px solid var(--bs-border-color);
+        }
+        .main-content {
+            margin-left: 220px;
+            padding: 1rem;
+        }
+        .step-row {
+            border-bottom: 1px solid var(--bs-border-color);
+            padding: 0.25rem 0;
+            font-family: var(--bs-font-monospace);
+            font-size: 0.875rem;
+        }
+        .step-row:hover {
+            background-color: var(--bs-tertiary-bg);
+        }
+        .step-row.clickable {
+            cursor: pointer;
+        }
+        .step-logs {
+            background-color: var(--bs-dark-bg-subtle);
+            border-radius: 0.25rem;
+            margin: 0.25rem 0 0.25rem 50px;
+            padding: 0.5rem;
+            font-size: 0.8rem;
+        }
+        .nav-scenario {
+            font-size: 0.8rem;
+            padding: 0.25rem 0.5rem;
+            border-left: 3px solid transparent;
+        }
+        .nav-scenario:hover {
+            background-color: var(--bs-tertiary-bg);
+        }
+        .nav-scenario.active {
+            border-left-color: var(--bs-primary);
+            background-color: var(--bs-tertiary-bg);
+        }
+        .log-indicator {
+            font-size: 0.6rem;
+            vertical-align: middle;
+        }
+        .nested-call {
+            border-left: 3px solid var(--bs-info);
+            margin: 0.5rem 0 0.5rem 50px;
+            padding-left: 0.5rem;
+            background-color: var(--bs-tertiary-bg);
+        }
+        .nested-scenario {
+            border-radius: 0.25rem;
+            margin: 0.25rem 0;
+            padding: 0.5rem;
+            font-size: 0.85rem;
+        }
+        .nested-scenario .nested-step {
+            font-family: var(--bs-font-monospace);
+            font-size: 0.8rem;
+            padding: 0.125rem 0;
+        }
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; }
+        }
+    </style>
+</head>
+<body x-data="KarateReport.featureData()">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="../karate-summary.html">
+                <img src="../res/karate-logo.svg" alt="Karate" height="32" class="d-inline-block align-middle me-2"/>
+                <span x-text="featureSimpleName">Feature</span>
+            </a>
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="../karate-summary.html">Summary</a>
+                </li>
+            </ul>
+            <button class="btn btn-sm btn-outline-light ms-2" @click="toggleTheme()" title="Toggle theme">
+                <span x-show="theme === 'light'">&#9790;</span>
+                <span x-show="theme === 'dark'">&#9788;</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Left Sidebar -->
+    <nav class="sidebar bg-body-tertiary pt-3">
+        <div class="px-3 mb-2">
+            <small class="text-muted">Scenarios</small>
+        </div>
+        <template x-for="scenario in data.scenarios" :key="scenario.refId">
+            <a class="nav-scenario d-block text-decoration-none"
+               :class="scenario.skipped ? 'text-warning' : (scenario.passed ? 'text-success' : 'text-danger')"
+               :href="'#' + scenario.refId"
+               :title="scenario.name">
+                <span class="fw-bold" x-text="scenario.refId"></span>
+                <span x-text="scenario.name ? ' ' + truncate(scenario.name, 20) : ''"></span>
+            </a>
+        </template>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content" style="margin-top: 56px;">
+        <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="../karate-summary.html">Summary</a></li>
+                <li class="breadcrumb-item active" aria-current="page" x-text="data.name || data.path">Feature</li>
+            </ol>
+        </nav>
+
+        <h4 x-text="data.name || 'Feature'">Feature Name</h4>
+        <p class="text-muted small" x-text="data.path">path/to/feature</p>
+
+        <!-- Scenarios -->
+        <template x-for="scenario in data.scenarios" :key="scenario.refId">
+            <div class="card mb-3" :id="scenario.refId">
+                <div class="card-header d-flex justify-content-between align-items-center py-2"
+                     :class="scenario.skipped ? 'bg-warning-subtle' : (scenario.passed ? 'bg-success-subtle' : 'bg-danger-subtle')">
+                    <span>
+                        <span class="fw-bold" x-text="scenario.refId"></span>
+                        <span x-text="scenario.name"></span>
+                        <template x-if="scenario.isOutlineExample">
+                            <span class="badge bg-info ms-1">Outline</span>
+                        </template>
+                        <template x-for="tag in scenario.tags || []" :key="tag">
+                            <span class="badge bg-secondary ms-1" x-text="tag"></span>
+                        </template>
+                    </span>
+                    <span>
+                        <small class="text-muted me-2" x-text="scenario.durationMillis + ' ms'"></small>
+                        <span x-show="scenario.skipped" class="badge bg-warning">SKIP</span>
+                        <span x-show="scenario.passed && !scenario.skipped" class="badge bg-success">PASS</span>
+                        <span x-show="!scenario.passed" class="badge bg-danger">FAIL</span>
+                    </span>
+                </div>
+                <div class="card-body p-0" x-html="renderSteps(scenario.steps)">
+                </div>
+                <!-- Scenario Error -->
+                <template x-if="scenario.error && !scenario.steps?.some(s => s.error)">
+                    <div class="card-footer bg-danger-subtle">
+                        <pre class="mb-0 small text-danger" x-text="scenario.error"></pre>
+                    </div>
+                </template>
+            </div>
+        </template>
+    </main>
+
+    <script src="../res/bootstrap.bundle.min.js"></script>
+    <script src="../res/karate-report.js"></script>
+    <script id="karate-data" type="application/json">{
+  "path": "generated_tests/karate/integration.feature",
+  "name": "OpenAPI contract tests",
+  "relativePath": "generated_tests/karate/integration.feature",
+  "passed": true,
+  "durationMillis": 37,
+  "scenarios": [
+    {
+      "name": "flow: crud_lifecycle",
+      "line": 12,
+      "passed": true,
+      "durationMillis": 26,
+      "startTime": 1785333051927,
+      "endTime": 1785333051953,
+      "refId": "[1:12]",
+      "sectionIndex": 1,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@flow",
+        "@lifecycle"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "passed",
+          "durationMillis": 5,
+          "hasLogs": true,
+          "logs": "request:\n1 > POST http://localhost:8000/__test/reset\n1 > Host: localhost:8000\n1 > Content-Length: 0\n1 > Connection: keep-alive\n1 > User-Agent: Apache-HttpClient/5.6.1 (Java/21.0.11)\n\nresponse time in milliseconds: 0\n1 < 204 POST http://localhost:8000/__test/reset\n1 < date: Wed, 29 Jul 2026 13:50:51 GMT\n1 < server: uvicorn\n\nPOST http://localhost:8000/__test/reset\n204 (0 ms)\n",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 13,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 14,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"Katherine Johnson\", \"email\": \"katherine@example.com\"}",
+          "line": 15,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 16,
+          "status": "passed",
+          "durationMillis": 4,
+          "hasLogs": true,
+          "logs": "request:\n2 > POST http://localhost:8000/users\n2 > Content-Type: application/json\n2 > Host: localhost:8000\n2 > Content-Length: 60\n2 > Connection: keep-alive\n2 > User-Agent: Apache-HttpClient/5.6.1 (Java/21.0.11)\n{\n  \"name\": \"Katherine Johnson\",\n  \"email\": \"katherine@example.com\"\n}\n\nresponse time in milliseconds: 2\n2 < 201 POST http://localhost:8000/users\n2 < date: Wed, 29 Jul 2026 13:50:51 GMT\n2 < server: uvicorn\n2 < content-length: 97\n2 < content-type: application/json\n{\n  \"name\": \"Katherine Johnson\",\n  \"email\": \"katherine@example.com\",\n  \"role\": \"member\",\n  \"active\": true,\n  \"id\": 4\n}\n\nPOST http://localhost:8000/users\n201 (2 ms)\n",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "201",
+          "line": 17,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "created_resource_id = response.id",
+          "line": 18,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 19,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", created_resource_id",
+          "line": 20,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 21,
+          "status": "passed",
+          "durationMillis": 4,
+          "hasLogs": true,
+          "logs": "request:\n3 > GET http://localhost:8000/users/4\n3 > Host: localhost:8000\n3 > Connection: keep-alive\n3 > User-Agent: Apache-HttpClient/5.6.1 (Java/21.0.11)\n\nresponse time in milliseconds: 0\n3 < 200 GET http://localhost:8000/users/4\n3 < date: Wed, 29 Jul 2026 13:50:51 GMT\n3 < server: uvicorn\n3 < content-length: 97\n3 < content-type: application/json\n{\n  \"name\": \"Katherine Johnson\",\n  \"email\": \"katherine@example.com\",\n  \"role\": \"member\",\n  \"active\": true,\n  \"id\": 4\n}\n\nGET http://localhost:8000/users/4\n200 (0 ms)\n",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "200",
+          "line": 22,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 23,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", created_resource_id",
+          "line": 24,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"example\"}",
+          "line": 25,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "patch",
+          "line": 26,
+          "status": "passed",
+          "durationMillis": 3,
+          "hasLogs": true,
+          "logs": "request:\n4 > PATCH http://localhost:8000/users/4\n4 > Content-Type: application/json\n4 > Host: localhost:8000\n4 > Content-Length: 18\n4 > Connection: keep-alive\n4 > User-Agent: Apache-HttpClient/5.6.1 (Java/21.0.11)\n{\n  \"name\": \"example\"\n}\n\nresponse time in milliseconds: 0\n4 < 200 PATCH http://localhost:8000/users/4\n4 < date: Wed, 29 Jul 2026 13:50:51 GMT\n4 < server: uvicorn\n4 < content-length: 87\n4 < content-type: application/json\n{\n  \"name\": \"example\",\n  \"email\": \"katherine@example.com\",\n  \"role\": \"member\",\n  \"active\": true,\n  \"id\": 4\n}\n\nPATCH http://localhost:8000/users/4\n200 (0 ms)\n",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "200",
+          "line": 27,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 28,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", created_resource_id",
+          "line": 29,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "delete",
+          "line": 30,
+          "status": "passed",
+          "durationMillis": 3,
+          "hasLogs": true,
+          "logs": "request:\n5 > DELETE http://localhost:8000/users/4\n5 > Host: localhost:8000\n5 > Connection: keep-alive\n5 > User-Agent: Apache-HttpClient/5.6.1 (Java/21.0.11)\n\nresponse time in milliseconds: 6\n5 < 204 DELETE http://localhost:8000/users/4\n5 < date: Wed, 29 Jul 2026 13:50:51 GMT\n5 < server: uvicorn\n\nDELETE http://localhost:8000/users/4\n204 (6 ms)\n",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 31,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ]
+    },
+    {
+      "name": "flow: deleted_resource_is_not_found",
+      "line": 34,
+      "passed": true,
+      "durationMillis": 11,
+      "startTime": 1785333051953,
+      "endTime": 1785333051964,
+      "refId": "[2:34]",
+      "sectionIndex": 2,
+      "exampleIndex": -1,
+      "isOutlineExample": false,
+      "thread": "thread-1",
+      "tags": [
+        "@flow",
+        "@lifecycle_negative"
+      ],
+      "skipped": false,
+      "steps": [
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "baseUrl = karate.properties['api.baseUrl'] || \"http://localhost:8000\"",
+          "line": 5,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 6,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"__test\", \"reset\"",
+          "line": 7,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 8,
+          "status": "passed",
+          "durationMillis": 5,
+          "hasLogs": true,
+          "logs": "request:\n1 > POST http://localhost:8000/__test/reset\n1 > Host: localhost:8000\n1 > Content-Length: 0\n1 > Connection: keep-alive\n1 > User-Agent: Apache-HttpClient/5.6.1 (Java/21.0.11)\n\nresponse time in milliseconds: 0\n1 < 204 POST http://localhost:8000/__test/reset\n1 < date: Wed, 29 Jul 2026 13:50:51 GMT\n1 < server: uvicorn\n\nPOST http://localhost:8000/__test/reset\n204 (0 ms)\n",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 9,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 35,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\"",
+          "line": 36,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "request",
+          "text": "{\"name\": \"Katherine Johnson\", \"email\": \"katherine@example.com\"}",
+          "line": 37,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "post",
+          "line": 38,
+          "status": "passed",
+          "durationMillis": 3,
+          "hasLogs": true,
+          "logs": "request:\n2 > POST http://localhost:8000/users\n2 > Content-Type: application/json\n2 > Host: localhost:8000\n2 > Content-Length: 60\n2 > Connection: keep-alive\n2 > User-Agent: Apache-HttpClient/5.6.1 (Java/21.0.11)\n{\n  \"name\": \"Katherine Johnson\",\n  \"email\": \"katherine@example.com\"\n}\n\nresponse time in milliseconds: 7\n2 < 201 POST http://localhost:8000/users\n2 < date: Wed, 29 Jul 2026 13:50:51 GMT\n2 < server: uvicorn\n2 < content-length: 97\n2 < content-type: application/json\n{\n  \"name\": \"Katherine Johnson\",\n  \"email\": \"katherine@example.com\",\n  \"role\": \"member\",\n  \"active\": true,\n  \"id\": 4\n}\n\nPOST http://localhost:8000/users\n201 (7 ms)\n",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "201",
+          "line": 39,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "*",
+          "keyword": "def",
+          "text": "created_resource_id = response.id",
+          "line": 40,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 41,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", created_resource_id",
+          "line": 42,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "delete",
+          "line": 43,
+          "status": "passed",
+          "durationMillis": 2,
+          "hasLogs": true,
+          "logs": "request:\n3 > DELETE http://localhost:8000/users/4\n3 > Host: localhost:8000\n3 > Connection: keep-alive\n3 > User-Agent: Apache-HttpClient/5.6.1 (Java/21.0.11)\n\nresponse time in milliseconds: 0\n3 < 204 DELETE http://localhost:8000/users/4\n3 < date: Wed, 29 Jul 2026 13:50:51 GMT\n3 < server: uvicorn\n\nDELETE http://localhost:8000/users/4\n204 (0 ms)\n",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "204",
+          "line": 44,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Given",
+          "keyword": "url",
+          "text": "baseUrl",
+          "line": 45,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "And",
+          "keyword": "path",
+          "text": "\"users\", created_resource_id",
+          "line": 46,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "When",
+          "keyword": "method",
+          "text": "get",
+          "line": 47,
+          "status": "passed",
+          "durationMillis": 2,
+          "hasLogs": true,
+          "logs": "request:\n4 > GET http://localhost:8000/users/4\n4 > Host: localhost:8000\n4 > Connection: keep-alive\n4 > User-Agent: Apache-HttpClient/5.6.1 (Java/21.0.11)\n\nresponse time in milliseconds: 0\n4 < 404 GET http://localhost:8000/users/4\n4 < date: Wed, 29 Jul 2026 13:50:51 GMT\n4 < server: uvicorn\n4 < content-length: 27\n4 < content-type: application/json\n{\n  \"detail\": \"User not found\"\n}\n\nGET http://localhost:8000/users/4\n404 (0 ms)\n",
+          "hasEmbeds": false,
+          "hasCallResults": false
+        },
+        {
+          "prefix": "Then",
+          "keyword": "status",
+          "text": "404",
+          "line": 48,
+          "status": "passed",
+          "durationMillis": 0,
+          "hasLogs": false,
+          "hasEmbeds": false,
+          "hasCallResults": false
+        }
+      ]
+    }
+  ]
+}</script>
+</body>
+</html>
