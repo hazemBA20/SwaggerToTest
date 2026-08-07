@@ -523,14 +523,14 @@ def parse_llm_plan(data: dict[str, Any], spec: dict[str, Any], operation: dict[s
                 raise RuntimeError("Multipart plans must set payload_json to null.")
             if not isinstance(payload_form, dict):
                 raise RuntimeError("Multipart plans must provide payload_form_json as a JSON object.")
-            missing_required = required_names - set(payload_form)
-            if item.get("kind") == "negative" and missing_required and missing_required.isdisjoint(required_binary_names) and required_binary_names.issubset(payload_form):
-                LOGGER.info(
-                    "Skipping multipart negative test %s because it only omits required text metadata fields: %s",
-                    item.get("name", "<unnamed>"),
-                    sorted(missing_required),
-                )
-                continue
+            # missing_required = required_names - set(payload_form)
+            # if item.get("kind") == "negative" and missing_required and missing_required.isdisjoint(required_binary_names) and required_binary_names.issubset(payload_form):
+            #     LOGGER.info(
+            #         "Skipping multipart negative test %s because it only omits required text metadata fields: %s",
+            #         item.get("name", "<unnamed>"),
+            #         sorted(missing_required),
+            #     )
+            #     continue
             payload_form = augment_multipart_defaults(spec, operation["request_body_schema"] or {}, payload_form)
             tests.append(TestCase(name=item["name"], method=item["method"], path=item["path"],
                                   expected_status=item["expected_status"], kind=item["kind"],
@@ -623,6 +623,12 @@ def llm_instructions(operation: dict[str, Any]) -> str:
         "  - constraints stated only in free-text 'description' fields (e.g. allowed file types, "
         "allowed value ranges, units) - use these ONLY when both the constraint and a mapped "
         "error status are explicitly stated in the spec text\n"
+        "  - every OPTIONAL field with a small, fixed value space - booleans, and enums/flags used "
+        "as toggles - regardless of whether any distinct error status is documented for them. Do not "
+        "skip these just because they are optional or unconstrained: 'optional' only means the field "
+        "may be omitted, not that its documented values are untested. If the field has a schema "
+        "'default', include the default explicitly as one of its values to exercise rather than "
+        "relying on it being silently applied.\n"
         "  - every documented response status code, success and error\n"
         "For each signal, decide whether it can be exercised with a test grounded strictly in what "
         "the operation states. Skip any signal that would require inventing behavior.\n\n"
@@ -632,13 +638,23 @@ def llm_instructions(operation: dict[str, Any]) -> str:
         "  - Produce one negative test per independently-failing constraint (missing required field, "
         "invalid enum value, out-of-range/length/pattern value, etc), each asserting the specific "
         "documented error status that constraint maps to.\n"
+        "  - For every optional boolean or toggle-style field identified in Pass 1, produce one "
+        "positive test PER distinct value the field can take (e.g. true and false for a boolean), "
+        "each asserting the SAME documented success status and response schema as the baseline "
+        "positive test - unless the spec text documents a different status for a specific value, in "
+        "which case assert that status instead. These are variation tests, not invented error tests: "
+        "never assert a status code for a value combination unless that status is what the spec "
+        "documents for the operation's success or the specific documented error path.\n"
         "  - Never combine two unrelated constraint violations in a single test case.\n\n"
         "HARD RULES (never break these):\n"
         f"  - Use only facts explicit in the operation: its parameters, its {body_kind}, and its "
         "documented responses. Do not invent fields, auth, endpoints, status codes, or constraints.\n"
-        "  - Do not invent rejection behavior for fields that may be echoed, optional in practice, or "
-        "otherwise not visibly validated by a documented response.\n"
-        "  - If in doubt about whether the API actually enforces something, omit the test rather than guess."
+        "  - Do not invent NEW error statuses for optional fields that have no documented error "
+        "mapping. Varying such a field's value must always assert an already-documented status "
+        "(normally the operation's existing success status).\n"
+        # "  - Do not invent rejection behavior for fields that may be echoed, optional in practice, or "
+        # "otherwise not visibly validated by a documented response.\n"
+        # "  - If in doubt about whether the API actually enforces something, omit the test rather than guess."
     )
 
     if is_multipart:
@@ -648,6 +664,9 @@ def llm_instructions(operation: dict[str, Any]) -> str:
             "  - Required file fields (format: binary) must be JSON objects with __file__, filename, "
             "and content_type.\n"
             "  - Include optional multipart fields when they have schema defaults, using those default values.\n"
+            "  - For a boolean/toggle field with a schema default, generate one positive test using the "
+            "default value (if not already covered by the baseline test) and one positive test using "
+            "the other value, each asserting the documented success status.\n"
             "  - For rejection tests, omit required binary file fields before omitting required text "
             "metadata fields, unless the description or documented responses clearly show the text "
             "field itself is validated with a 4xx.\n"
@@ -662,6 +681,9 @@ def llm_instructions(operation: dict[str, Any]) -> str:
             "  - Required file fields (format: binary) must be JSON objects with __file__, filename, "
             "and content_type.\n"
             "  - Include optional multipart fields when they have schema defaults, using those default values.\n"
+            "  - For a boolean/toggle field with a schema default, generate one positive test using the "
+            "default value (if not already covered by the baseline test) and one positive test using "
+            "the other value, each asserting the documented success status.\n"
             "  - Generate one missing-field negative test per field listed in the body schema's "
             "'required' list, binary or text, each omitting only that one field and asserting the "
             "documented 4xx. A required field is enforced by definition unless its description states "
@@ -674,7 +696,6 @@ def llm_instructions(operation: dict[str, Any]) -> str:
         )
 
     return core + format_rules + "\n\nReturn JSON only."
-
 
 def render_request_call(
     method: str,
