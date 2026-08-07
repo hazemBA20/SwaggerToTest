@@ -34,3 +34,5 @@ explanations.md
 demo_api.py
 config.py
 /carte_grise
+card-extract.postman_collection.json
+avidea-mind-openapi.yaml
