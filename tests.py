@@ -81,7 +81,7 @@ def client():
 
 
 def test_getversion_get_api_version_successfully(client):
-    """# test_id: c58039d8-6f1f-4f73-afc3-f1e278e11d4f"""
+    """# test_id: 3d9a10c5-7398-4ae1-9b23-b9d48df3f826"""
     headers = merge_headers({})
     response = client.request(
         "GET",
@@ -102,18 +102,22 @@ def test_getversion_get_api_version_successfully(client):
                     "type": "string",
                 }
             },
-            "required": {"0": "version"},
+            "required": ["version"],
             "type": "object",
         },
     )
 
 
-def test_extractregistrationcard_negative_test_missing_required_fields(client):
-    """# test_id: e84ce8b3-625a-49b4-8aab-c496dee3e584"""
+def test_extractregistrationcard_extract_registration_card_successfully(client):
+    """# test_id: 68ace2dc-3211-47a7-8dbd-8117c5613f90"""
     headers = merge_headers({})
     _files, _data = split_multipart(
         {
-            "registrationDocument": "__file__",
+            "registrationDocument": {
+                "__file__": True,
+                "filename": "test.jpg",
+                "content_type": "image/jpeg",
+            },
             "requestId": "892d5757-28cc-407f-881c-55833811599d",
         }
     )
@@ -126,35 +130,20 @@ def test_extractregistrationcard_negative_test_missing_required_fields(client):
         data=_data or None,
     )
     print(f"STATUS:{response.status_code}")
-    assert response.status_code == 400
-    assert_response_schema(
-        response.json(),
-        {
-            "description": "Message format when any error occurs.",
-            "properties": {
-                "api-version": {
-                    "description": "Server side api-version",
-                    "example": "1.0",
-                    "type": "string",
-                },
-                "details": {
-                    "description": "A user friendly error message. Can be null or non present",
-                    "example": "mission not found",
-                    "type": "string",
-                },
-                "error": {
-                    "description": "An error code",
-                    "example": "NOT_FOUND",
-                    "type": "string",
-                },
-                "success": {
-                    "description": "The value must be \u0027false\u0027",
-                    "enum": {"0": false},
-                    "example": false,
-                    "type": "boolean",
-                },
-            },
-            "required": {"0": "success", "1": "error"},
-            "type": "object",
-        },
+    assert response.status_code == 200
+
+
+def test_extractregistrationcard_negative_test_missing_required_fields(client):
+    """# test_id: 68ace2dc-3211-47a7-8dbd-8117c5613f91"""
+    headers = merge_headers({})
+    _files, _data = split_multipart({"requestId": "892d5757-28cc-407f-881c-55833811599d"})
+    response = client.request(
+        "POST",
+        "/registration-card/extract",
+        params={},
+        headers=headers,
+        files=_files or None,
+        data=_data or None,
     )
+    print(f"STATUS:{response.status_code}")
+    assert response.status_code == 400

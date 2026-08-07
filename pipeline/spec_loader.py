@@ -33,13 +33,13 @@ def materialize(value: Any) -> Any:
 
 
 def fix_schema_enums(schema: dict) -> dict:
-    """Fix enum arrays that openapi-core represents as dicts with numeric keys."""
+    """Fix enum arrays and required arrays that openapi-core represents as dicts with numeric keys."""
     if not isinstance(schema, dict):
         return schema
     
     result = {}
     for key, value in schema.items():
-        if key == "enum" and isinstance(value, dict):
+        if key in ("enum", "required") and isinstance(value, dict):
             # Convert dict with numeric keys to list
             if all(isinstance(k, str) and k.isdigit() for k in value.keys()):
                 sorted_items = sorted(value.items(), key=lambda x: int(x[0]))
@@ -169,7 +169,7 @@ def resolve_operation(spec_root: Any, path: str, method: str, operation: Any) ->
         content = materialize(request_body.get("content", {}))
         if content:
             media_type = next(iter(content.keys()))
-            request_schema = materialize(content[media_type].get("schema"))
+            request_schema = fix_schema_enums(materialize(content[media_type].get("schema")))
 
     response_schemas, documented_statuses = response_schemas_for_operation(operation)
     security_headers = collect_security_headers(spec_root, operation)
