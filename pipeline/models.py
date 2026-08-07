@@ -93,7 +93,8 @@ class PipelineState(BaseModel):
     spec_path: str
     base_url: str = "http://localhost:8000"
     reset_path: str | None = None
-    model: str = "claude-sonnet-4-20250514"
+    provider: str = "anthropic"
+    model: str = "claude-sonnet-4-6"
     report_path: str = ""
     operations: list[ResolvedOperation] = Field(default_factory=list)
     auth_config: dict[str, str | None] = Field(default_factory=dict)

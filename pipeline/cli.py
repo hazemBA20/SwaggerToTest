@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from pipeline.graph import run_pipeline
+from pipeline.llm_provider import get_default_model_for_provider
 from pipeline.models import PipelineState
 
 
@@ -18,13 +19,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", required=True, help="Output path for generated pytest module")
     parser.add_argument("--report-out", required=True, help="Output path for markdown report")
     parser.add_argument("--reset-path", help="Reset endpoint path for test isolation (e.g., /__test/reset)")
+    parser.add_argument("--provider", default="anthropic", choices=["anthropic", "groq", "google"], help="LLM provider (default: anthropic)")
+    parser.add_argument("--model", help="Model name (defaults vary by provider)")
     parser.add_argument("--max-iterations", type=int, default=3)
-    parser.add_argument("--model", default="claude-sonnet-4-6")
     args = parser.parse_args(argv)
 
     spec_path = str(Path(args.spec).resolve())
     code_path = str(Path(args.out).resolve())
     report_path = str(Path(args.report_out).resolve())
+
+    model = args.model or get_default_model_for_provider(args.provider)
 
     initial = PipelineState(
         spec_path=spec_path,
@@ -32,8 +36,9 @@ def main(argv: list[str] | None = None) -> int:
         code_path=code_path,
         report_path=report_path,
         reset_path=args.reset_path or None,
+        provider=args.provider,
+        model=model,
         max_iterations=args.max_iterations,
-        model=args.model,
     )
 
     final = run_pipeline(initial)

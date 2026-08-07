@@ -18,12 +18,42 @@ def materialize(value: Any) -> Any:
         return value
     if isinstance(value, list):
         return [materialize(item) for item in value]
-    if hasattr(value, "keys"):
+    if isinstance(value, dict):
+        return {key: materialize(item) for key, item in value.items()}
+    # Handle SchemaPath objects from openapi-core - use dict-like interface
+    if hasattr(value, "keys") and hasattr(value, "items") and hasattr(value, "get"):
         try:
             return {key: materialize(value[key]) for key in value.keys()}
-        except (KeyError, TypeError):
-            return str(value)
+        except (TypeError, AttributeError):
+            pass
+    # Fallback to __dict__ for other objects
+    if hasattr(value, "__dict__"):
+        return materialize(value.__dict__)
     return value
+
+
+def fix_schema_enums(schema: dict) -> dict:
+    """Fix enum arrays that openapi-core represents as dicts with numeric keys."""
+    if not isinstance(schema, dict):
+        return schema
+    
+    result = {}
+    for key, value in schema.items():
+        if key == "enum" and isinstance(value, dict):
+            # Convert dict with numeric keys to list
+            if all(isinstance(k, str) and k.isdigit() for k in value.keys()):
+                sorted_items = sorted(value.items(), key=lambda x: int(x[0]))
+                result[key] = [v for k, v in sorted_items]
+            else:
+                result[key] = value
+        elif isinstance(value, dict):
+            result[key] = fix_schema_enums(value)
+        elif isinstance(value, list):
+            result[key] = [fix_schema_enums(item) if isinstance(item, dict) else item for item in value]
+        else:
+            result[key] = value
+    
+    return result
 
 
 def header_from_security_scheme(scheme: dict[str, Any]) -> str:
@@ -93,6 +123,9 @@ def split_parameters(parameters: list[dict[str, Any]]) -> tuple[list[dict], list
     path: list[dict] = []
     header: list[dict] = []
     for param in parameters:
+        # Skip non-dict parameters (e.g., if materialize didn't convert properly)
+        if not isinstance(param, dict):
+            continue
         location = param.get("in")
         entry = {
             "name": param.get("name", ""),
@@ -119,7 +152,7 @@ def response_schemas_for_operation(operation: Any) -> tuple[dict[int, dict], lis
         content = materialize(response.get("content", {}))
         json_schema = content.get("application/json", {}).get("schema")
         if json_schema:
-            schemas[status] = materialize(json_schema)
+            schemas[status] = fix_schema_enums(materialize(json_schema))
     statuses.sort()
     return schemas, statuses
 
@@ -165,8 +198,12 @@ def load_operations(spec_path: str) -> tuple[list[ResolvedOperation], dict[str, 
     operations: list[ResolvedOperation] = []
     all_security_headers: list[str] = []
 
-    for path in spec_root.get("paths", {}):
-        path_item = spec_root["paths"][path]
+    paths = spec_root.get("paths", {})
+    for path in paths.keys():
+        # Skip non-path keys (e.g., /version metadata keys from openapi-core)
+        if not path.startswith("/"):
+            continue
+        path_item = materialize(paths[path])
         for method in path_item.keys():
             if method.lower() not in HTTP_METHODS:
                 continue

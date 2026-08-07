@@ -3,9 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from langchain_anthropic import ChatAnthropic
-
 from pipeline.flows import build_flows_for_state
+from pipeline.llm_provider import get_llm
 from pipeline.models import PipelineState, TestCase, TestCasePlan, ValidationError
 from pipeline.validator import operation_by_id
 
@@ -19,9 +18,17 @@ Rules:
 - Add negative tests only for constraints explicit in the schema (required fields, enums).
 - If media_type is application/json, use payload_json only (payload_form must be null).
 - If media_type is multipart/form-data, use payload_form only (payload_json must be null).
-  For required file fields use: {"__file__": true, "filename": "test.jpg", "content_type": "image/jpeg"}
+  CRITICAL: Include ALL required fields in payload_form.
+  For required file fields (format: binary), the value MUST be a JSON object with three keys:
+    "__file__": true (boolean)
+    "filename": "test.jpg" (string with appropriate extension)
+    "content_type": "image/jpeg" (string with appropriate MIME type)
+  EXAMPLE: "registrationDocument": {"__file__": true, "filename": "test.jpg", "content_type": "image/jpeg"}
+  NEVER use a string value like "__file__" - always use the full JSON object structure.
+  For required string fields use concrete example values from the schema.
+  For optional fields, include them if they have default values or are commonly used.
 - Substitute concrete values for path parameters in path strings.
-- For each test, omit the id field (it will be assigned automatically).
+- For each test, include the operation_id field from the input. Omit the id field (it will be assigned automatically).
 """
 
 
@@ -42,10 +49,11 @@ def retry_reasons(state: PipelineState, operation_id: str) -> list[str]:
 
 def plan_operation(
     operation,
+    provider: str,
     model: str,
     retry_reasons_list: list[str] | None = None,
 ) -> list[TestCase]:
-    llm = ChatAnthropic(model=model, temperature=0)
+    llm = get_llm(provider, model, temperature=0)
     structured = llm.with_structured_output(TestCasePlan)
     user_content = operation.model_dump_json()
     if retry_reasons_list:
@@ -74,13 +82,14 @@ def plan_node(state: PipelineState) -> dict[str, Any]:
     ops = operation_by_id(state)
     existing = [t for t in state.plan if t.operation_id not in target_ops]
 
+    provider = getattr(state, "provider", "anthropic")
     new_tests: list[TestCase] = []
     for operation_id in target_ops:
         operation = ops.get(operation_id)
         if not operation:
             continue
         reasons = retry_reasons(state, operation_id) if state.validation_errors else []
-        planned = plan_operation(operation, state.model, reasons or None)
+        planned = plan_operation(operation, provider, state.model, reasons or None)
         new_tests.extend(planned)
 
     return {

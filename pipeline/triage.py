@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_anthropic import ChatAnthropic
-
+from pipeline.llm_provider import get_llm
 from pipeline.models import (
     Patch,
     PatchPlan,
@@ -35,6 +34,7 @@ def triage_one(
     operation: ResolvedOperation,
     exec_result,
     state: PipelineState,
+    provider: str,
     model: str,
 ) -> TriageResult:
     if exec_result.passed:
@@ -103,16 +103,17 @@ def triage_one(
             detail="Response body failed JSON Schema validation against the documented contract",
         )
 
-    return llm_triage(test, operation, detail, model)
+    return llm_triage(test, operation, detail, provider, model)
 
 
 def llm_triage(
     test: TestCase,
     operation: ResolvedOperation,
     failure_detail: str,
+    provider: str,
     model: str,
 ) -> TriageResult:
-    llm = ChatAnthropic(model=model, temperature=0)
+    llm = get_llm(provider, model, temperature=0)
     structured = llm.with_structured_output(TriageDecision)
     prompt = (
         f"Operation:\n{operation.model_dump_json()}\n\n"
@@ -133,6 +134,7 @@ def triage_node(state: PipelineState) -> dict[str, Any]:
     tests_by_id = {test.id: test for test in state.plan}
     results_by_id = {result.test_id: result for result in state.exec_results}
 
+    provider = getattr(state, "provider", "anthropic")
     triage: list[TriageResult] = []
     new_findings = list(state.findings)
 
@@ -141,7 +143,7 @@ def triage_node(state: PipelineState) -> dict[str, Any]:
         if not test:
             continue
         operation = ops[test.operation_id]
-        result = triage_one(test, operation, exec_result, state, state.model)
+        result = triage_one(test, operation, exec_result, state, provider, state.model)
         triage.append(result)
         if result.category == "real_bug":
             new_findings.append(result)

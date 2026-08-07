@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_anthropic import ChatAnthropic
-
+from pipeline.llm_provider import get_llm
 from pipeline.models import Patch, PatchPlan, PipelineState, TestCase
 from pipeline.validator import operation_by_id
 
@@ -23,7 +22,8 @@ def reviser_node(state: PipelineState) -> dict[str, Any]:
     tests_by_id = {test.id: test for test in state.plan}
     bug_ids = {t.test_id for t in state.triage if t.category == "generation_bug"}
 
-    llm = ChatAnthropic(model=state.model, temperature=0)
+    provider = getattr(state, "provider", "anthropic")
+    llm = get_llm(provider, state.model, temperature=0)
     structured = llm.with_structured_output(PatchPlan)
 
     updated = list(state.plan)

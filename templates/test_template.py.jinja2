@@ -1,5 +1,6 @@
 """Generated contract tests — do not edit manually."""
 import os
+from pathlib import Path
 
 import httpx
 import jsonschema
@@ -7,6 +8,7 @@ import pytest
 
 BASE_URL = os.getenv("API_BASE_URL", {{ base_url | tojson }}).rstrip("/")
 TEST_RESET_PATH = os.getenv("TEST_RESET_PATH", {{ reset_path | tojson }})
+TEST_DATA_DIR = os.getenv("TEST_DATA_DIR", "carte_grise")
 
 AUTH_HEADERS = {{ auth_headers | tojson }}
 
@@ -34,7 +36,23 @@ def split_multipart(payload_form: dict) -> tuple[dict, dict]:
         if isinstance(value, dict) and value.get("__file__"):
             filename = value.get("filename", "test.bin")
             content_type = value.get("content_type", "application/octet-stream")
-            files[key] = (filename, b"test-content", content_type)
+            # Try to find a real file in TEST_DATA_DIR
+            test_data_path = Path(TEST_DATA_DIR)
+            if test_data_path.exists():
+                # Look for any image file in the test data directory
+                image_files = list(test_data_path.rglob("*.jpg")) + list(test_data_path.rglob("*.png")) + list(test_data_path.rglob("*.jpeg"))
+                if image_files:
+                    # Use the first available image file
+                    real_file_path = image_files[0]
+                    with open(real_file_path, "rb") as f:
+                        file_content = f.read()
+                    files[key] = (filename, file_content, content_type)
+                else:
+                    # Fallback to placeholder if no files found
+                    files[key] = (filename, b"test-content", content_type)
+            else:
+                # Fallback to placeholder if directory doesn't exist
+                files[key] = (filename, b"test-content", content_type)
         else:
             data[key] = value
     return files, data
