@@ -1,0 +1,141 @@
+"""Generated contract tests — do not edit manually."""
+import os
+from pathlib import Path
+
+import httpx
+import jsonschema
+import pytest
+
+BASE_URL = os.getenv("API_BASE_URL", {{ base_url | tojson }}).rstrip("/")
+TEST_RESET_PATH = os.getenv("TEST_RESET_PATH", {{ reset_path | tojson }})
+TEST_DATA_DIR = os.getenv("TEST_DATA_DIR", "carte_grise")
+
+AUTH_HEADERS = {{ auth_headers | tojson }}
+
+
+def merge_headers(test_headers: dict) -> dict:
+    merged = dict(AUTH_HEADERS)
+    merged.update(test_headers or {})
+    return merged
+
+
+def resolve_bindings(value, bindings):
+    if isinstance(value, str):
+        return value.format_map(bindings)
+    if isinstance(value, list):
+        return [resolve_bindings(item, bindings) for item in value]
+    if isinstance(value, dict):
+        return {key: resolve_bindings(item, bindings) for key, item in value.items()}
+    return value
+
+
+def split_multipart(payload_form: dict) -> tuple[dict, dict]:
+    files = {}
+    data = {}
+    for key, value in (payload_form or {}).items():
+        if isinstance(value, dict) and value.get("__file__"):
+            filename = value.get("filename", "test.bin")
+            content_type = value.get("content_type", "application/octet-stream")
+            # Try to find a real file in TEST_DATA_DIR
+            test_data_path = Path(TEST_DATA_DIR)
+            if test_data_path.exists():
+                # Look for any image file in the test data directory
+                image_files = list(test_data_path.rglob("*.jpg")) + list(test_data_path.rglob("*.png")) + list(test_data_path.rglob("*.jpeg"))
+                if image_files:
+                    # Use the first available image file
+                    real_file_path = image_files[0]
+                    with open(real_file_path, "rb") as f:
+                        file_content = f.read()
+                    files[key] = (filename, file_content, content_type)
+                else:
+                    # Fallback to placeholder if no files found
+                    files[key] = (filename, b"test-content", content_type)
+            else:
+                # Fallback to placeholder if directory doesn't exist
+                files[key] = (filename, b"test-content", content_type)
+        else:
+            data[key] = value
+    return files, data
+
+
+def assert_response_schema(response_json, schema):
+    jsonschema.Draft202012Validator(schema).validate(response_json)
+
+
+@pytest.fixture
+def client():
+    with httpx.Client(base_url=BASE_URL, timeout=30.0) as api_client:
+        if TEST_RESET_PATH:
+            reset_response = api_client.post(TEST_RESET_PATH)
+            assert reset_response.status_code == 204, (
+                f"Could not reset test data: {reset_response.status_code}"
+            )
+        yield api_client
+
+
+{% for test in tests %}
+def test_{{ test.function_name }}(client):
+    """# test_id: {{ test.id }}"""
+    headers = merge_headers({{ test.headers | tojson }})
+    {% if test.use_multipart %}
+    _files, _data = split_multipart({{ test.payload_form | tojson }})
+    response = client.request(
+        {{ test.method | tojson }},
+        {{ test.path | tojson }},
+        params={{ test.query | tojson }},
+        headers=headers,
+        files=_files or None,
+        data=_data or None,
+    )
+    {% elif test.payload_json is not none %}
+    response = client.request(
+        {{ test.method | tojson }},
+        {{ test.path | tojson }},
+        params={{ test.query | tojson }},
+        headers=headers,
+        json={{ test.payload_json | tojson }},
+    )
+    {% else %}
+    response = client.request(
+        {{ test.method | tojson }},
+        {{ test.path | tojson }},
+        params={{ test.query | tojson }},
+        headers=headers,
+    )
+    {% endif %}
+    print(f"STATUS:{response.status_code}")
+    assert response.status_code == {{ test.expected_status }}
+    {% if test.response_schema %}
+    assert_response_schema(response.json(), {{ test.response_schema | tojson }})
+    {% endif %}
+
+
+{% endfor %}
+{% for flow in flows %}
+def test_flow_{{ flow.function_name }}(client):
+    """Flow {{ flow.name }}"""
+    if TEST_RESET_PATH:
+        reset_response = client.post(TEST_RESET_PATH)
+        assert reset_response.status_code == 204
+    bindings = {}
+    {% for step in flow.steps %}
+    _headers = merge_headers({})
+    response = client.request(
+        {{ step.method | tojson }},
+        resolve_bindings({{ step.path | tojson }}, bindings),
+        params={},
+        headers=_headers,
+        json=resolve_bindings({{ step.payload_json | tojson }}, bindings),
+    )
+    print(f"STATUS:{response.status_code}")
+    assert response.status_code == {{ step.expected_status }}
+    {% if step.response_schema %}
+    assert_response_schema(response.json(), {{ step.response_schema | tojson }})
+    {% endif %}
+    {% for binding, field in step.extract.items() %}
+    bindings[{{ binding | tojson }}] = response.json()[{{ field | tojson }}]
+    {% endfor %}
+    {% endfor %}
+
+
+{% endfor %}

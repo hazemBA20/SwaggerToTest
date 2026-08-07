@@ -31,3 +31,6 @@ generated_tests/
 karate.jar
 phase2.md
 explanations.md
+demo_api.py
+config.py
+/carte_grise
